@@ -1,0 +1,38 @@
+{
+  "name": "claude-checker",
+  "version": "1.0.0",
+  "description": "Test your CLAUDE.md behavioral compliance - verify Claude Code follows your coding preferences",
+  "type": "module",
+  "bin": {
+    "claude-checker": "./src/index.ts",
+    "claude-checker-project": "./src/project.ts",
+    "claude-checker-compare": "./src/compare.ts",
+    "claude-checker-ci": "./src/ci.ts"
+  },
+  "scripts": {
+    "check": "bun run src/index.ts",
+    "check:project": "bun run src/project.ts",
+    "compare": "bun run src/compare.ts",
+    "ci": "bun run src/ci.ts",
+    "test": "bun run src/index.ts --help"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "claude.md",
+    "testing",
+    "ai",
+    "coding-preferences",
+    "tdd",
+    "typescript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  }
+}
