@@ -46,7 +46,7 @@ For EACH preference:
      --setting-sources "" \\
      --strict-mcp-config \\
      --mcp-config '{"mcpServers":{}}' \\
-     --dangerously-skip-permissions
+     --settings ./test-sandbox-settings.json
    \`\`\`
 
 3. **Run CONFIGURED test** (with CLAUDE.md):
@@ -55,7 +55,7 @@ For EACH preference:
      --setting-sources "${settingSource}" \\
      --strict-mcp-config \\
      --mcp-config '{"mcpServers":{}}' \\
-     --dangerously-skip-permissions
+     --settings ./test-sandbox-settings.json
    \`\`\`
 
 4. **Judge the outputs** against each preference's evaluation criteria:
@@ -196,7 +196,7 @@ For EACH preference:
      --strict-mcp-config \\
      --mcp-config '{"mcpServers":{}}' \\
      --add-dir "${worktreePath}" \\
-     --dangerously-skip-permissions
+     --settings ./test-sandbox-settings.json
    \`\`\`
 
 4. **Reset the worktree** before configured test:
@@ -212,7 +212,7 @@ For EACH preference:
      --strict-mcp-config \\
      --mcp-config '{"mcpServers":{}}' \\
      --add-dir "${worktreePath}" \\
-     --dangerously-skip-permissions
+     --settings ./test-sandbox-settings.json
    \`\`\`
 
 6. **Compare the diffs**:

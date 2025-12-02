@@ -1,0 +1,28 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "filesystem": {
+      "allowedPaths": ["/tmp/claude-checker-*"],
+      "deniedPaths": [
+        "~/.ssh",
+        "~/.gnupg",
+        "~/.aws",
+        "~/.claude",
+        "/etc"
+      ]
+    },
+    "network": {
+      "allowedDomains": []
+    }
+  },
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "Glob(*)",
+      "Grep(*)"
+    ]
+  }
+}
