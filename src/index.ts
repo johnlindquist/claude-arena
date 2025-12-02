@@ -3,94 +3,78 @@
 
 import { spawn } from "bun";
 import { resolve } from "node:path";
-import { homedir } from "node:os";
-import { buildJudgePrompt, DEFAULT_PREFERENCES } from "./prompts";
-import type { TestConfig } from "./types";
+import { buildJudgePrompt } from "./prompts";
 
 async function main() {
   const { flags, positional } = parseArgs(process.argv.slice(2));
-  const userPrompt = positional[0] || "Please execute judgment";
 
   // Handle --help
   if (flags.help || flags.h) {
     console.log(`
-claude-checker - Test your CLAUDE.md behavioral compliance
+claude-checker - Evaluate and optimize instruction effectiveness
 
-Usage: claude-checker [prompt] [options]
+Usage: claude-checker <goal> [options]
+
+The judge will:
+  1. Generate a task that reveals goal adherence
+  2. Create 5 variations of your goal (terse, clear, exhaustive, visual, reframed)
+  3. Run each variation against the task using Haiku
+  4. Evaluate results and recommend the best approach
 
 Arguments:
-  prompt                  Initial prompt to start evaluation (default: "Please execute judgment")
+  goal                    The goal to evaluate (what your instructions should achieve)
 
 Options:
-  --claude-md <path>      Path to CLAUDE.md (default: ~/.claude/CLAUDE.md)
-  --source <user|project> Setting source to test (default: user)
-  --model <model>         Judge model: opus, sonnet, haiku (default: opus)
-  --preferences <file>    Custom preferences JSON file
-  --tasks <n>             Tasks per preference (default: 3)
+  --model <model>         Judge model: opus, sonnet (default: sonnet)
+  --variations <n>        Number of variations to test (default: 5)
   --help                  Show this help
 
 Examples:
-  claude-checker "Please execute judgment"           # Start with custom prompt
-  claude-checker --source project                    # Test ./.claude/CLAUDE.md
-  claude-checker "Begin" --model sonnet              # Use Sonnet (cheaper) as judge
-  claude-checker --preferences prefs.json            # Use custom preferences
+  claude-checker "code should follow Python's Zen principles"
+  claude-checker "avoid code smells: feature envy, shotgun surgery, primitive obsession"
+  claude-checker "use TDD: write tests before implementation"
+  claude-checker --model opus "prioritize readability over cleverness"
 `);
     process.exit(0);
   }
 
-  // Resolve to absolute path to avoid issues with spawned processes
-  const rawPath = flags.claudeMd || flags.claudemd || `${homedir()}/.claude/CLAUDE.md`;
-  const claudeMdPath = resolve(rawPath);
-
-  const config: TestConfig = {
-    claudeMdPath,
-    settingSource: (flags.source as "user" | "project") || "user",
-    model: flags.model || "opus",
-    tasksPerPreference: Number(flags.tasks) || 3,
-  };
-
-  // Verify CLAUDE.md exists
-  const claudeMdExists = await Bun.file(config.claudeMdPath).exists();
-  if (!claudeMdExists) {
-    console.error(`❌ CLAUDE.md not found at: ${config.claudeMdPath}`);
-    console.error(`\nEither create it or specify a different path with --claude-md`);
+  // Get the goal from positional args
+  const goal = positional.join(" ");
+  if (!goal) {
+    console.error("❌ Please provide a goal to evaluate");
+    console.error("\nExample: claude-checker \"code should follow Python's Zen principles\"");
     process.exit(1);
   }
 
-  // Load custom preferences or use defaults
-  let preferences = DEFAULT_PREFERENCES;
-  if (flags.preferences) {
-    const customPrefs = await Bun.file(flags.preferences).json();
-    preferences = customPrefs.preferences;
-  }
+  const model = flags.model || "sonnet";
+  const variations = Number(flags.variations) || 5;
 
-  console.log("🧪 claude-checker - CLAUDE.md Behavioral Compliance Tester");
+  console.log("🧪 claude-checker - Instruction Effectiveness Evaluator");
   console.log("━".repeat(55));
-  console.log(`CLAUDE.md:      ${config.claudeMdPath}`);
-  console.log(`Setting source: ${config.settingSource}`);
-  console.log(`Judge model:    ${config.model}`);
-  console.log(`Preferences:    ${preferences.length}`);
+  console.log(`Goal:       ${goal}`);
+  console.log(`Judge:      ${model}`);
+  console.log(`Variations: ${variations}`);
   console.log("━".repeat(55));
   console.log("");
-  console.log("Spawning ISOLATED judge (no settings, no MCP)...\n");
+  console.log("Spawning judge to design experiment...\n");
 
   // Build the judge's system prompt
-  const systemPrompt = buildJudgePrompt(
-    preferences,
-    config.claudeMdPath,
-    config.settingSource
-  );
+  const systemPrompt = buildJudgePrompt(goal, variations);
 
-  // Spawn the judge in COMPLETE ISOLATION
+  // Get the sandbox settings path
+  const settingsPath = resolve(import.meta.dir, "..", "test-sandbox-settings.json");
+
+  // Spawn the judge
   const proc = spawn({
     cmd: [
       "claude",
-      userPrompt,
-      "--model", config.model,
+      "Begin the evaluation. First, generate the task and variations, then run the tests.",
+      "--model", model,
       "--setting-sources", "",
       "--strict-mcp-config",
       "--mcp-config", '{"mcpServers":{}}',
       "--system-prompt", systemPrompt,
+      "--settings", settingsPath,
     ],
     stdin: "inherit",
     stdout: "inherit",

@@ -1,30 +1,23 @@
 {
   "name": "claude-checker",
-  "version": "1.0.0",
-  "description": "Test your CLAUDE.md behavioral compliance - verify Claude Code follows your coding preferences",
+  "version": "2.0.0",
+  "description": "Evaluate and optimize instruction effectiveness - find the best way to express your coding goals",
   "type": "module",
   "bin": {
-    "claude-checker": "./src/index.ts",
-    "claude-checker-project": "./src/project.ts",
-    "claude-checker-compare": "./src/compare.ts",
-    "claude-checker-ci": "./src/ci.ts"
+    "claude-checker": "./src/index.ts"
   },
   "scripts": {
     "check": "bun run src/index.ts",
-    "check:project": "bun run src/project.ts",
-    "compare": "bun run src/compare.ts",
-    "ci": "bun run src/ci.ts",
     "test": "bun run src/index.ts --help"
   },
   "keywords": [
     "claude",
     "claude-code",
     "claude.md",
-    "testing",
+    "instruction-tuning",
+    "prompt-engineering",
     "ai",
-    "coding-preferences",
-    "tdd",
-    "typescript"
+    "evaluation"
   ],
   "author": "",
   "license": "MIT",
