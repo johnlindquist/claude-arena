@@ -1,5 +1,24 @@
 {
   "sandbox": {
     "enabled": true
+  },
+  "permissions": {
+    "allow": [
+      "Read(./**)",
+      "Edit(./**)",
+      "Write(./**)",
+      "Bash(*)",
+      "Glob(*)",
+      "Grep(*)"
+    ],
+    "deny": [
+      "Read(../**)",
+      "Read(~/**)",
+      "Read(//)",
+      "Edit(../**)",
+      "Edit(~/**)",
+      "Write(../**)",
+      "Write(~/**)"
+    ]
   }
 }
