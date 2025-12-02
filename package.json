@@ -1,21 +1,22 @@
 {
   "name": "claude-checker",
   "version": "2.0.0",
-  "description": "Evaluate and optimize instruction effectiveness - find the best way to express your coding goals",
+  "description": "Evaluate and optimize system prompt effectiveness - find the best way to express your system prompts",
   "type": "module",
   "bin": {
     "claude-checker": "./src/index.ts"
   },
   "scripts": {
     "check": "bun run src/index.ts",
-    "test": "bun run src/index.ts --help"
+    "test": "vitest"
   },
   "keywords": [
     "claude",
     "claude-code",
     "claude.md",
-    "instruction-tuning",
+    "system-prompt",
     "prompt-engineering",
+    "prompt-testing",
     "ai",
     "evaluation"
   ],
@@ -23,7 +24,8 @@
   "license": "MIT",
   "devDependencies": {
     "@types/bun": "latest",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "latest"
   },
   "engines": {
     "bun": ">=1.0.0"

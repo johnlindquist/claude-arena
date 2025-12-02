@@ -1,14 +1,19 @@
 // src/types.ts
 
 /**
- * A goal describes what behavior the markdown should produce.
+ * A system prompt describes what behavior the markdown should produce.
  * Can be design principles, code smells to avoid, style rules, etc.
  */
-export interface EvalGoal {
+export interface SystemPromptSpec {
   name: string;
   description: string;
   criteria: string[];  // Specific things to look for
 }
+
+/**
+ * Legacy type alias for backwards compatibility
+ */
+export type EvalGoal = SystemPromptSpec;
 
 /**
  * Legacy type for backwards compatibility
@@ -26,10 +31,10 @@ export interface TestTask {
 
 export interface TestConfig {
   markdownPath: string;       // Path to any markdown file
-  goal: EvalGoal;             // What to evaluate against
+  systemPrompt: SystemPromptSpec;  // What to evaluate against
   model: string;
   settingSource?: "user" | "project";  // For CLAUDE.md compat
-  tasksPerGoal: number;
+  tasksPerPrompt: number;
 }
 
 export interface JudgeFeedback {
@@ -40,7 +45,7 @@ export interface JudgeFeedback {
 }
 
 export interface EvalResult {
-  goalAchieved: boolean;
+  promptAdhered: boolean;
   baselineScore: number;
   configuredScore: number;
   improvement: number;

@@ -11,22 +11,22 @@ async function main() {
   // Handle --help
   if (flags.help || flags.h) {
     console.log(`
-claude-checker - Evaluate and optimize instruction effectiveness
+claude-checker - Evaluate and optimize system prompt effectiveness
 
-Usage: claude-checker <goal|file.md> [options]
+Usage: claude-checker <system-prompt|file.md> [options]
 
 The judge will:
-  1. Generate a task that reveals goal adherence
-  2. Create 10 variations of your goal (terse, clear, exhaustive, visual, reframed, socratic, checklist, mnemonic, temporal, anti-pattern)
+  1. Generate a task that reveals system prompt adherence
+  2. Create 5 variations of your system prompt (terse, clear, exhaustive, visual, reframed, socratic, checklist, mnemonic, temporal, anti-pattern)
   3. Run each variation against the task using Haiku
   4. Evaluate results and recommend the best approach
 
 Arguments:
-  goal                    The goal to evaluate (string or path to .md file)
+  system-prompt           The system prompt to evaluate (string or path to .md file)
 
 Options:
   --model <model>         Judge model: opus, sonnet (default: sonnet)
-  --variations <n>        Number of variations to test (default: 10)
+  --variations <n>        Number of variations to test (default: 5)
   --help                  Show this help
 
 Examples:
@@ -38,46 +38,46 @@ Examples:
     process.exit(0);
   }
 
-  // Get the goal from positional args - can be a string or path to .md file
-  const goalArg = positional.join(" ");
-  if (!goalArg) {
-    console.error("❌ Please provide a goal to evaluate");
+  // Get the system prompt from positional args - can be a string or path to .md file
+  const promptArg = positional.join(" ");
+  if (!promptArg) {
+    console.error("❌ Please provide a system prompt to evaluate");
     console.error("\nExample: claude-checker \"code should follow Python's Zen principles\"");
-    console.error("         claude-checker ./my-goal.md");
+    console.error("         claude-checker ./my-system-prompt.md");
     process.exit(1);
   }
 
   // Check if it's a file path (only if it looks like one)
-  let goal: string;
-  const looksLikePath = goalArg.endsWith(".md") ||
-    goalArg.startsWith("./") ||
-    goalArg.startsWith("/") ||
-    goalArg.startsWith("../");
+  let systemPrompt: string;
+  const looksLikePath = promptArg.endsWith(".md") ||
+    promptArg.startsWith("./") ||
+    promptArg.startsWith("/") ||
+    promptArg.startsWith("../");
 
   if (looksLikePath) {
-    const resolvedPath = resolve(goalArg);
+    const resolvedPath = resolve(promptArg);
     const isFile = await Bun.file(resolvedPath).exists();
     if (!isFile) {
-      console.error(`❌ File not found: ${goalArg}`);
+      console.error(`❌ File not found: ${promptArg}`);
       process.exit(1);
     }
-    goal = await Bun.file(resolvedPath).text();
-    console.log(`📄 Loaded goal from: ${goalArg}`);
+    systemPrompt = await Bun.file(resolvedPath).text();
+    console.log(`📄 Loaded system prompt from: ${promptArg}`);
   } else {
-    goal = goalArg;
+    systemPrompt = promptArg;
   }
 
   const model = flags.model || "opus";
-  const variations = Number(flags.variations) || 10;
+  const variations = Number(flags.variations) || 5;
 
-  // Truncate goal for display
-  const goalDisplay = goal.length > 60
-    ? goal.slice(0, 60).replace(/\n/g, " ") + "..."
-    : goal.replace(/\n/g, " ");
+  // Truncate system prompt for display
+  const promptDisplay = systemPrompt.length > 60
+    ? systemPrompt.slice(0, 60).replace(/\n/g, " ") + "..."
+    : systemPrompt.replace(/\n/g, " ");
 
-  console.log("🧪 claude-checker - Instruction Effectiveness Evaluator");
+  console.log("🧪 claude-checker - System Prompt Effectiveness Evaluator");
   console.log("━".repeat(55));
-  console.log(`Goal:       ${goalDisplay}`);
+  console.log(`Prompt:     ${promptDisplay}`);
   console.log(`Judge:      ${model}. Adjust with --model <model>`);
   console.log(`Variations: ${variations}. Adjust with --variations <n>`);
   console.log("━".repeat(55));
@@ -86,7 +86,7 @@ Examples:
   console.log("Spawning judge to design experiment...\n");
 
   // Build the judge's system prompt
-  const systemPrompt = buildJudgePrompt(goal, variations);
+  const judgeSystemPrompt = buildJudgePrompt(systemPrompt, variations);
 
   const mcpConfig = {
     "mcpServers": {}
@@ -134,7 +134,7 @@ exit 0
       "--setting-sources", "",
       "--strict-mcp-config",
       "--mcp-config", JSON.stringify(mcpConfig),
-      "--system-prompt", systemPrompt,
+      "--system-prompt", judgeSystemPrompt,
       "--settings", JSON.stringify(settings),
       "Begin the evaluation",
     ],
