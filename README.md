@@ -67,7 +67,7 @@ The judge (Sonnet by default) orchestrates the entire experiment:
 ```
 Your Goal
     ↓
-Judge generates task + 5 variations
+Judge generates task + 10 variations
     ↓
 Haiku runs task with each variation
     ↓

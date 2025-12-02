@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 // src/index.ts
 
-import { spawn } from "bun";
 import { resolve } from "node:path";
 import { buildJudgePrompt } from "./prompts";
+import { tmpDir, timestamp } from "./const";
 
 async function main() {
   const { flags, positional } = parseArgs(process.argv.slice(2));
@@ -17,7 +17,7 @@ Usage: claude-checker <goal|file.md> [options]
 
 The judge will:
   1. Generate a task that reveals goal adherence
-  2. Create 5 variations of your goal (terse, clear, exhaustive, visual, reframed)
+  2. Create 10 variations of your goal (terse, clear, exhaustive, visual, reframed, socratic, checklist, mnemonic, temporal, anti-pattern)
   3. Run each variation against the task using Haiku
   4. Evaluate results and recommend the best approach
 
@@ -26,7 +26,7 @@ Arguments:
 
 Options:
   --model <model>         Judge model: opus, sonnet (default: sonnet)
-  --variations <n>        Number of variations to test (default: 5)
+  --variations <n>        Number of variations to test (default: 10)
   --help                  Show this help
 
 Examples:
@@ -47,12 +47,16 @@ Examples:
     process.exit(1);
   }
 
-  // Check if it's a file path
+  // Check if it's a file path (only if it looks like one)
   let goal: string;
-  const resolvedPath = resolve(goalArg);
-  const isFile = await Bun.file(resolvedPath).exists();
+  const looksLikePath = goalArg.endsWith(".md") ||
+    goalArg.startsWith("./") ||
+    goalArg.startsWith("/") ||
+    goalArg.startsWith("../");
 
-  if (isFile || goalArg.endsWith(".md")) {
+  if (looksLikePath) {
+    const resolvedPath = resolve(goalArg);
+    const isFile = await Bun.file(resolvedPath).exists();
     if (!isFile) {
       console.error(`❌ File not found: ${goalArg}`);
       process.exit(1);
@@ -63,8 +67,8 @@ Examples:
     goal = goalArg;
   }
 
-  const model = flags.model || "sonnet";
-  const variations = Number(flags.variations) || 5;
+  const model = flags.model || "opus";
+  const variations = Number(flags.variations) || 10;
 
   // Truncate goal for display
   const goalDisplay = goal.length > 60
@@ -78,30 +82,65 @@ Examples:
   console.log(`Variations: ${variations}. Adjust with --variations <n>`);
   console.log("━".repeat(55));
   console.log("");
+  console.log("Writing variations to: " + tmpDir + "/" + timestamp);
   console.log("Spawning judge to design experiment...\n");
 
   // Build the judge's system prompt
   const systemPrompt = buildJudgePrompt(goal, variations);
 
-  // Get the sandbox settings path
-  const settingsPath = resolve(import.meta.dir, "..", "test-sandbox-settings.json");
+  const mcpConfig = {
+    "mcpServers": {}
+  }
+
+
+  const hook = `
+input=$(cat)
+
+# Check if this is a Bash tool and contains "claude --model haiku"
+if echo "$input" | grep -q '"tool_name".*"Bash"' && echo "$input" | grep -q 'claude --model haiku'; then
+  echo '{"decision": "approve"}'
+  exit 0
+fi
+
+if echo "$input" | grep -q '${timestamp}'; then
+  echo '{"decision": "approve"}'
+  exit 0
+fi
+
+# For all other commands, let normal permission flow handle it
+exit 0
+`
+  const settings = {
+    "hooks": {
+      "PreToolUse": [
+        {
+          "matcher": "*",
+          "hooks": [
+            {
+              "type": "command",
+              "command": hook
+            }
+          ]
+        }
+      ]
+    }
+  }
 
   // Spawn the judge in print mode for non-interactive execution
-  const proc = Bun.spawn({
-    cmd: [
+  const proc = Bun.spawn(
+    [
       "claude",
-      "--print", "Begin the evaluation. First, generate the task and variations, then run the tests.",
       "--model", model,
       "--setting-sources", "",
       "--strict-mcp-config",
-      "--mcp-config", '{"mcpServers":{}}',
+      "--mcp-config", JSON.stringify(mcpConfig),
       "--system-prompt", systemPrompt,
-      "--settings", settingsPath,
+      "--settings", JSON.stringify(settings),
+      "Begin the evaluation",
     ],
-    stdout: "pipe",
-    stderr: "pipe",
-    stdin: "pipe",
-  });
+    {
+      stdio: ['inherit', 'inherit', 'inherit']
+    });
 
   const exitCode = await proc.exited;
   process.exit(exitCode);
@@ -118,10 +157,13 @@ function parseArgs(args: string[]): ParsedArgs {
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
+    if (arg === undefined) continue;
     if (arg.startsWith("--")) {
       const key = arg.slice(2).replace(/-/g, "");
-      if (args[i + 1] && !args[i + 1].startsWith("--")) {
-        flags[key] = args[++i];
+      const nextArg = args[i + 1];
+      if (nextArg !== undefined && !nextArg.startsWith("--")) {
+        flags[key] = nextArg;
+        i++;
       } else {
         flags[key] = "true";
       }

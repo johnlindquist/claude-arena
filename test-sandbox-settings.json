@@ -1,29 +1,9 @@
 {
   "sandbox": {
     "enabled": true,
-    "write": [
-      ".",
-      "/Users/johnlindquist/.claude",
-      "/Users/johnlindquist/.claude.json"
-    ]
+    "autoAllowBashIfSandboxed": true
   },
   "permissions": {
-    "allow": [
-      "Read(./**)",
-      "Edit(./**)",
-      "Write(./**)",
-      "Bash(*)",
-      "Glob(*)",
-      "Grep(*)"
-    ],
-    "deny": [
-      "Read(../**)",
-      "Read(~/**)",
-      "Read(//)",
-      "Edit(../**)",
-      "Edit(~/**)",
-      "Write(../**)",
-      "Write(~/**)"
-    ]
+    "defaultMode": "acceptEdits"
   }
 }
