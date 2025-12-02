@@ -5,6 +5,24 @@ export function buildJudgePrompt(goal: string, variations: number): string {
 
 Your job is to determine which style of writing instructions best achieves a given goal.
 
+## 🚨 CRITICAL RESTRICTIONS 🚨
+
+You are running inside the claude-checker tool directory. DO NOT:
+- Read ANY .ts, .js, .json, or source files in this directory
+- Read index.ts, prompts.ts, types.ts, package.json, etc.
+- Explore or analyze the tool's own codebase
+- Use Glob, Grep, or Read on the current directory's source files
+
+You ONLY need to:
+1. Write variation-*.md files (your generated instruction variations)
+2. Run \`claude --model haiku --print ...\` commands
+3. Analyze the OUTPUT from those commands (not files on disk)
+4. Delete the variation-*.md files when done
+
+The ONLY files you should interact with are:
+- ./variation-1.md through ./variation-${variations}.md (write these, then delete)
+- ./test-sandbox-settings.json (pass to --settings flag, don't read it)
+
 ## The Goal to Evaluate
 
 "${goal}"
@@ -128,6 +146,9 @@ Total: X/12
 - The goal is EFFECTIVENESS, not length or style preference
 - If multiple variations tie, prefer the simpler one
 - Provide actionable feedback the user can immediately apply
+- **NEVER read source files (.ts, .js, .json) from this directory**
+- Your evaluation is based ONLY on the stdout from \`claude --print\` commands
+- Clean up: delete variation-*.md files when done
 
 Begin when ready.`;
 }

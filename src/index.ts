@@ -74,8 +74,8 @@ Examples:
   console.log("🧪 claude-checker - Instruction Effectiveness Evaluator");
   console.log("━".repeat(55));
   console.log(`Goal:       ${goalDisplay}`);
-  console.log(`Judge:      ${model}`);
-  console.log(`Variations: ${variations}`);
+  console.log(`Judge:      ${model}. Adjust with --model <model>`);
+  console.log(`Variations: ${variations}. Adjust with --variations <n>`);
   console.log("━".repeat(55));
   console.log("");
   console.log("Spawning judge to design experiment...\n");
@@ -98,8 +98,9 @@ Examples:
       "--system-prompt", systemPrompt,
       "--settings", settingsPath,
     ],
-    stdout: "inherit",
-    stderr: "inherit",
+    stdout: "pipe",
+    stderr: "pipe",
+    stdin: "pipe",
   });
 
   const exitCode = await proc.exited;
