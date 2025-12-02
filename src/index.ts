@@ -64,11 +64,11 @@ Examples:
   // Get the sandbox settings path
   const settingsPath = resolve(import.meta.dir, "..", "test-sandbox-settings.json");
 
-  // Spawn the judge
-  const proc = spawn({
+  // Spawn the judge in print mode for non-interactive execution
+  const proc = Bun.spawn({
     cmd: [
       "claude",
-      "Begin the evaluation. First, generate the task and variations, then run the tests.",
+      "--print", "Begin the evaluation. First, generate the task and variations, then run the tests.",
       "--model", model,
       "--setting-sources", "",
       "--strict-mcp-config",
@@ -76,7 +76,6 @@ Examples:
       "--system-prompt", systemPrompt,
       "--settings", settingsPath,
     ],
-    stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
   });

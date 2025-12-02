@@ -46,19 +46,22 @@ Each variation should use a DIFFERENT STRATEGY:
 
 ### Step 3: Run the Experiment
 
-For each variation, run a Haiku session with the task:
+For each variation, run a Haiku session with the task.
+
+IMPORTANT: Write files to the CURRENT DIRECTORY (not /tmp):
 
 \`\`\`bash
-# Write variation to temp file
-echo 'VARIATION_CONTENT' > /tmp/variation-N.md
+# Write variation to local file
+echo 'VARIATION_CONTENT' > ./variation-1.md
 
 # Run Haiku with this variation as system context
 claude --model haiku --print "TASK_PROMPT" \\
-  --system-prompt "Follow these instructions:\\n\\n$(cat /tmp/variation-N.md)" \\
+  --system-prompt "Follow these instructions:\\n\\n$(cat ./variation-1.md)" \\
   --settings ./test-sandbox-settings.json
 \`\`\`
 
-Run all ${variations} variations. Capture each output.
+Repeat for all ${variations} variations (variation-1.md through variation-${variations}.md).
+Capture each output for comparison.
 
 ### Step 4: Evaluate Results
 
