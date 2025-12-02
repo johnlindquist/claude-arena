@@ -13,7 +13,7 @@ async function main() {
     console.log(`
 claude-checker - Evaluate and optimize instruction effectiveness
 
-Usage: claude-checker <goal> [options]
+Usage: claude-checker <goal|file.md> [options]
 
 The judge will:
   1. Generate a task that reveals goal adherence
@@ -22,7 +22,7 @@ The judge will:
   4. Evaluate results and recommend the best approach
 
 Arguments:
-  goal                    The goal to evaluate (what your instructions should achieve)
+  goal                    The goal to evaluate (string or path to .md file)
 
 Options:
   --model <model>         Judge model: opus, sonnet (default: sonnet)
@@ -31,27 +31,49 @@ Options:
 
 Examples:
   claude-checker "code should follow Python's Zen principles"
-  claude-checker "avoid code smells: feature envy, shotgun surgery, primitive obsession"
-  claude-checker "use TDD: write tests before implementation"
-  claude-checker --model opus "prioritize readability over cleverness"
+  claude-checker ./goals/zen-principles.md
+  claude-checker "avoid code smells: feature envy, shotgun surgery"
+  claude-checker --model opus ./my-design-principles.md
 `);
     process.exit(0);
   }
 
-  // Get the goal from positional args
-  const goal = positional.join(" ");
-  if (!goal) {
+  // Get the goal from positional args - can be a string or path to .md file
+  const goalArg = positional.join(" ");
+  if (!goalArg) {
     console.error("❌ Please provide a goal to evaluate");
     console.error("\nExample: claude-checker \"code should follow Python's Zen principles\"");
+    console.error("         claude-checker ./my-goal.md");
     process.exit(1);
+  }
+
+  // Check if it's a file path
+  let goal: string;
+  const resolvedPath = resolve(goalArg);
+  const isFile = await Bun.file(resolvedPath).exists();
+
+  if (isFile || goalArg.endsWith(".md")) {
+    if (!isFile) {
+      console.error(`❌ File not found: ${goalArg}`);
+      process.exit(1);
+    }
+    goal = await Bun.file(resolvedPath).text();
+    console.log(`📄 Loaded goal from: ${goalArg}`);
+  } else {
+    goal = goalArg;
   }
 
   const model = flags.model || "sonnet";
   const variations = Number(flags.variations) || 5;
 
+  // Truncate goal for display
+  const goalDisplay = goal.length > 60
+    ? goal.slice(0, 60).replace(/\n/g, " ") + "..."
+    : goal.replace(/\n/g, " ");
+
   console.log("🧪 claude-checker - Instruction Effectiveness Evaluator");
   console.log("━".repeat(55));
-  console.log(`Goal:       ${goal}`);
+  console.log(`Goal:       ${goalDisplay}`);
   console.log(`Judge:      ${model}`);
   console.log(`Variations: ${variations}`);
   console.log("━".repeat(55));
