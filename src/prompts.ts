@@ -366,6 +366,116 @@ export function buildVariationArgs(taskPath: string, variationPath: string): str
 	];
 }
 
+/**
+ * Step 3: Evaluation continuation message - sent to the same session that did design
+ * Since we're resuming the session, we don't need to repeat context - the judge remembers
+ */
+export function buildEvaluationMessage(
+	task: string,
+	variations: VariationInfo[],
+	results: VariationResult[],
+	outputDir: string,
+): string {
+	// Truncate long outputs to avoid context overflow
+	const MAX_OUTPUT_LENGTH = 8000;
+	const truncateOutput = (output: string): string => {
+		if (output.length <= MAX_OUTPUT_LENGTH) return output;
+		const half = Math.floor(MAX_OUTPUT_LENGTH / 2);
+		return `${output.slice(0, half)}\n\n[... ${(output.length - MAX_OUTPUT_LENGTH).toLocaleString()} characters truncated ...]\n\n${output.slice(-half)}`;
+	};
+
+	const resultBlocks = results
+		.map((r) => {
+			const varInfo = variations.find((v) => v.number === r.variationNumber);
+			const outputDisplay = truncateOutput(r.output);
+			const wasTruncated = r.output.length > MAX_OUTPUT_LENGTH;
+			return `
+### Variation ${r.variationNumber}: ${varInfo?.strategy || "UNKNOWN"}
+
+**Project Path**: \`${outputDir}/run-${r.variationNumber}\`
+${wasTruncated ? `**Note**: Output truncated from ${r.output.length.toLocaleString()} chars. Full output in project path.` : ""}
+
+<output>
+${outputDisplay}
+</output>
+
+Exit code: ${r.exitCode}
+`;
+		})
+		.join("\n");
+
+	return `## Test Results Are In!
+
+The variations you designed have been executed. Here are the results:
+
+**Task that was executed:**
+${task}
+
+**Results from each variation:**
+${resultBlocks}
+
+## Your Evaluation
+
+Now evaluate which variation performed best. You already know:
+- The original system prompt being tested
+- The variations you designed and why
+
+For each output, score on:
+
+| Criteria | Score (0-3) |
+|----------|-------------|
+| System Prompt Adherence | How well did the code follow the system prompt? |
+| Natural Integration | Did it feel forced or natural? |
+| Code Quality | Overall quality of the output |
+| Consistency | Would this approach work for similar tasks? |
+
+## Output Format
+
+\`\`\`
+## Results
+
+### Variation 0: BASELINE (Original System Prompt)
+**Project**: \`${outputDir}/run-0\`
+
+[Code output analysis - this is the BASELINE to compare against]
+Scores: Adherence=X, Integration=X, Quality=X, Consistency=X
+Total: X/12
+
+### Variation 1: [STRATEGY]
+**Project**: \`${outputDir}/run-1\`
+
+[Code output analysis]
+Scores: Adherence=X, Integration=X, Quality=X, Consistency=X
+Total: X/12
+Improvement over baseline: +/- X points
+
+(continue for all variations)
+
+## Recommendation
+
+**Winner**: Variation N (STYLE)
+**Score**: X/12
+**Improvement over Baseline**: +/- X points
+
+**Why it worked** (or why baseline was best):
+- ...
+
+**Optimized Version**:
+\\\`\\\`\\\`markdown
+[The best system prompt text to use - improved based on what worked]
+\\\`\\\`\\\`
+\`\`\`
+
+## Important Notes
+
+- Variation 0 (BASELINE) is the original system prompt - use it as the reference point
+- If no variation beats the baseline, recommend keeping the original
+- Be objective - don't favor verbose over terse just because it's more detailed
+- Focus on what actually worked in the outputs, not theoretical advantages
+
+Begin your evaluation.`;
+}
+
 // Types
 export interface VariationInfo {
 	number: number;

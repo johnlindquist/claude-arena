@@ -13,7 +13,7 @@ import {
 	type VariationInfo,
 	type VariationResult,
 	buildDesignPrompt,
-	buildEvaluationPrompt,
+	buildEvaluationMessage,
 	buildVariationsOnlyPrompt,
 	getOutputDir,
 } from "./prompts";
@@ -642,6 +642,8 @@ Format your response as:
 	// ============================================
 	// STEP 1: Design Phase - Generate task and variations
 	// ============================================
+	// Generate a session ID for the judge - we'll reuse this for evaluation
+	const judgeSessionId = crypto.randomUUID();
 	let task: string;
 	let variationInfo: VariationInfo[];
 	const taskPath = join(outputDir, "task.md");
@@ -668,6 +670,7 @@ Format your response as:
 			userMessage: "Begin now - write all variation files.",
 			useSpinner: true,
 			spinnerText: "Analyzing prompt and generating variations...",
+			sessionId: judgeSessionId,
 		});
 
 		if (designResult.exitCode !== 0) {
@@ -702,6 +705,7 @@ Format your response as:
 			userMessage: "Begin now - write the task and all variation files.",
 			useSpinner: true,
 			spinnerText: "Analyzing prompt, designing task, and generating variations...",
+			sessionId: judgeSessionId,
 		});
 
 		if (designResult.exitCode !== 0) {
@@ -762,8 +766,11 @@ Format your response as:
 
 	// Print initial status lines for all variations
 	for (let i = 0; i <= variations; i++) {
-		const label = i === 0 ? "BASELINE" : variationInfo.find((v) => v.number === i)?.strategy || `VAR-${i}`;
-		console.log(`   ${pc.cyan("◌")} ${pc.dim(`[${i}]`)} ${pc.dim(label.padEnd(12))} ${pc.dim("starting...")}`);
+		const label =
+			i === 0 ? "BASELINE" : variationInfo.find((v) => v.number === i)?.strategy || `VAR-${i}`;
+		console.log(
+			`   ${pc.cyan("◌")} ${pc.dim(`[${i}]`)} ${pc.dim(label.padEnd(12))} ${pc.dim("starting...")}`,
+		);
 	}
 
 	// Move cursor up to the first variation line for updates
@@ -777,7 +784,10 @@ Format your response as:
 	};
 
 	const updateStatusLine = (variationNum: number, status: string) => {
-		const label = variationNum === 0 ? "BASELINE" : variationInfo.find((v) => v.number === variationNum)?.strategy || `VAR-${variationNum}`;
+		const label =
+			variationNum === 0
+				? "BASELINE"
+				: variationInfo.find((v) => v.number === variationNum)?.strategy || `VAR-${variationNum}`;
 		const icon = status.includes("done")
 			? pc.green("✓")
 			: status.includes("error")
@@ -786,11 +796,14 @@ Format your response as:
 
 		// Truncate status to fit
 		const maxStatusLen = Math.max(20, (process.stdout.columns || 80) - 30);
-		const truncatedStatus = status.length > maxStatusLen ? status.slice(0, maxStatusLen - 1) + "…" : status;
+		const truncatedStatus =
+			status.length > maxStatusLen ? `${status.slice(0, maxStatusLen - 1)}…` : status;
 
 		moveCursorToLine(variationNum);
-		process.stdout.write(`\x1b[2K`); // Clear line
-		process.stdout.write(`   ${icon} ${pc.dim(`[${variationNum}]`)} ${pc.dim(label.padEnd(12))} ${truncatedStatus}`);
+		process.stdout.write("\x1b[2K"); // Clear line
+		process.stdout.write(
+			`   ${icon} ${pc.dim(`[${variationNum}]`)} ${pc.dim(label.padEnd(12))} ${truncatedStatus}`,
+		);
 		moveCursorToEnd();
 	};
 
@@ -889,27 +902,22 @@ Format your response as:
 	);
 
 	// ============================================
-	// STEP 3: Evaluate results
+	// STEP 3: Evaluate results (resume the same judge session)
 	// ============================================
 	console.log("");
 	console.log(pc.bgMagenta(pc.white(pc.bold(" STEP 3: EVALUATION "))));
-	console.log(pc.dim("Analyzing all outputs to determine which variation performed best"));
+	console.log(pc.dim("Resuming judge session to evaluate results (context preserved)"));
 	console.log("");
 	console.log(pc.bgYellow(pc.black(" ⏳ Please be patient - this may take 2-3 minutes... ")));
 	console.log(pc.dim("   The judge is comparing outputs against your original intent."));
 	console.log(pc.dim("─".repeat(60)));
 	console.log("");
 
-	const evaluationPrompt = buildEvaluationPrompt(
-		systemPrompt,
-		task,
-		variationInfo,
-		results,
-		outputDir,
-	);
+	// Build the evaluation message (not a full prompt - we're resuming the session)
+	const evaluationMessage = buildEvaluationMessage(task, variationInfo, results, outputDir);
 
 	const evalSpinner = ora({
-		text: "Starting evaluation...",
+		text: "Resuming judge session...",
 		color: "cyan",
 	}).start();
 
@@ -919,8 +927,8 @@ Format your response as:
 
 	const evalResult = await runClaude({
 		model,
-		systemPrompt: evaluationPrompt,
-		userMessage: "Begin your evaluation.",
+		userMessage: evaluationMessage,
+		resumeSessionId: judgeSessionId,
 		streamOutput: true,
 	});
 
@@ -939,6 +947,9 @@ Format your response as:
 **Mode**: ${userMode ? "user (~/.claude/CLAUDE.md)" : "standard"}
 **Judge Model**: ${model}
 **Test Model**: ${testModel}
+**Judge Session ID**: ${judgeSessionId}
+
+To continue the conversation with the judge: \`claude --resume ${judgeSessionId}\`
 
 ## Prompt Tested
 
@@ -982,145 +993,12 @@ ${variationInfo.map((v) => `- [run-${v.number}/](./run-${v.number}/) - ${v.strat
 	console.log(pc.bgGreen(pc.white(pc.bold(" ✅ COMPLETE "))));
 	console.log(`📋 ${pc.dim("Session summary:")} ${summaryPath}`);
 
-	// In user mode, offer to apply the optimized prompt to CLAUDE.md
-	if (userMode && evalResult.exitCode === 0) {
-		console.log(`\n${"━".repeat(55)}`);
-
-		const applySelection = await selectOption(
-			"The evaluation is complete. What would you like to do?",
-			[
-				"Apply the optimized prompt to ~/.claude/CLAUDE.md",
-				"View the recommended changes first",
-				"Exit without changes",
-			],
-		);
-
-		if (applySelection === 0 || applySelection === 1) {
-			// Extract the optimized prompt from the evaluation output
-			const optimizedMatch = evalResult.output.match(
-				/\*\*Optimized Version\*\*:?\s*\n```(?:markdown)?\n([\s\S]*?)\n```/i,
-			);
-
-			if (!optimizedMatch || !optimizedMatch[1]) {
-				console.log("\n⚠️  Could not find optimized prompt in evaluation output.");
-				console.log("   You can manually review the evaluation and update your CLAUDE.md.");
-			} else {
-				const optimizedPrompt = optimizedMatch[1].trim();
-
-				if (applySelection === 1) {
-					// Show the recommended changes
-					console.log("\n📝 Recommended optimized prompt:\n");
-					console.log("─".repeat(50));
-					console.log(optimizedPrompt);
-					console.log("─".repeat(50));
-					console.log(`\n(${optimizedPrompt.length.toLocaleString()} characters)\n`);
-
-					const confirmApply = await confirm("Apply this to your ~/.claude/CLAUDE.md?", false);
-					if (!confirmApply) {
-						console.log("\n👋 No changes made.");
-						process.exit(evalResult.exitCode);
-					}
-				}
-
-				// Ask how to apply
-				const applyMethod = await selectOption("How should the optimized prompt be applied?", [
-					"Replace the entire CLAUDE.md with the optimized version",
-					"Have the judge intelligently merge changes into existing CLAUDE.md",
-					"Append as a new section at the end",
-					"Cancel - don't make changes",
-				]);
-
-				if (applyMethod === 3) {
-					console.log("\n👋 No changes made.");
-					process.exit(evalResult.exitCode);
-				}
-
-				const claudeMdPath = join(homedir(), ".claude", "CLAUDE.md");
-				const currentContent = await Bun.file(claudeMdPath).text();
-
-				if (applyMethod === 0) {
-					// Full replacement
-					const backupPath = join(homedir(), ".claude", `CLAUDE.md.backup.${Date.now()}`);
-					await Bun.write(backupPath, currentContent);
-					await Bun.write(claudeMdPath, optimizedPrompt);
-					console.log("\n✅ Applied optimized prompt to ~/.claude/CLAUDE.md");
-					console.log(`   Backup saved to: ${backupPath}`);
-				} else if (applyMethod === 1) {
-					// Intelligent merge
-					console.log("\n🔍 Asking judge to merge changes intelligently...\n");
-
-					const mergePrompt = `You are merging an optimized system prompt into an existing CLAUDE.md file.
-
-## Current CLAUDE.md
-
-<current>
-${currentContent}
-</current>
-
-## Optimized Prompt (from stress testing)
-
-<optimized>
-${optimizedPrompt}
-</optimized>
-
-## Your Task
-
-Intelligently merge the optimized prompt into the current CLAUDE.md:
-
-1. **Preserve structure** - Keep the existing organization and imports (@~/.claude/...)
-2. **Update relevant sections** - Replace or enhance sections that the optimized prompt improves
-3. **Don't duplicate** - If the optimized prompt covers something already in current, pick the better version
-4. **Keep unrelated content** - Don't remove sections that the optimized prompt doesn't address
-
-Output ONLY the merged CLAUDE.md content, no explanations:
-
-\`\`\`markdown
-[merged content here]
-\`\`\``;
-
-					const mergeResult = await runClaude({
-						model,
-						systemPrompt: mergePrompt,
-						userMessage: "Merge the optimized prompt into the existing CLAUDE.md.",
-						streamOutput: true,
-					});
-
-					if (mergeResult.exitCode !== 0) {
-						console.error("\n❌ Failed to merge changes");
-					} else {
-						const mergedMatch = mergeResult.output.match(/```(?:markdown)?\n([\s\S]*?)\n```/);
-						if (mergedMatch?.[1]) {
-							const mergedContent = mergedMatch[1].trim();
-							const backupPath = join(homedir(), ".claude", `CLAUDE.md.backup.${Date.now()}`);
-							await Bun.write(backupPath, currentContent);
-							await Bun.write(claudeMdPath, mergedContent);
-							console.log("\n✅ Merged changes into ~/.claude/CLAUDE.md");
-							console.log(`   Backup saved to: ${backupPath}`);
-						} else {
-							console.log("\n⚠️  Could not extract merged content. No changes made.");
-						}
-					}
-				} else if (applyMethod === 2) {
-					// Append as new section
-					const appendedContent = `${currentContent}\n\n---\n\n## Optimized Rules (from claude-arena ${new Date().toISOString().split("T")[0]})\n\n${optimizedPrompt}`;
-					const backupPath = join(homedir(), ".claude", `CLAUDE.md.backup.${Date.now()}`);
-					await Bun.write(backupPath, currentContent);
-					await Bun.write(claudeMdPath, appendedContent);
-					console.log("\n✅ Appended optimized prompt to ~/.claude/CLAUDE.md");
-					console.log(`   Backup saved to: ${backupPath}`);
-				}
-			}
-		} else {
-			console.log("\n👋 No changes made.");
-		}
-	}
-
 	console.log(`\n${pc.dim("━".repeat(60))}`);
 	console.log(pc.dim("Want to refine the results or apply the optimized prompt?"));
-	console.log(`Continue interactively with: ${pc.cyan("claude --resume")}`);
+	console.log(`Continue the judge session: ${pc.cyan(`claude --resume ${judgeSessionId}`)}`);
 	console.log(pc.dim("━".repeat(60)));
 	console.log("");
-	console.log(`📂 ${pc.bold("Feel free to review all the output in this directory:")}`);
+	console.log(`📂 ${pc.bold("All output saved to:")}`);
 	console.log(`   ${pc.cyan(outputDir)}`);
 
 	process.exit(evalResult.exitCode);
@@ -1220,15 +1098,19 @@ async function runVariation(options: RunVariationOptions): Promise<VariationResu
  *
  * @param options.useSpinner - If true, use a spinner instead of streaming text output
  * @param options.spinnerText - Initial text for the spinner (only used if useSpinner is true)
+ * @param options.sessionId - If provided, use this session ID (for starting a new named session)
+ * @param options.resumeSessionId - If provided, resume this session instead of starting fresh
  */
 async function runClaude(options: {
 	model: string;
-	systemPrompt: string;
+	systemPrompt?: string;
 	userMessage: string;
 	streamOutput?: boolean;
 	useSpinner?: boolean;
 	spinnerText?: string;
-}): Promise<{ output: string; exitCode: number }> {
+	sessionId?: string;
+	resumeSessionId?: string;
+}): Promise<{ output: string; exitCode: number; sessionId?: string }> {
 	const mcpConfig = { mcpServers: {} };
 
 	const hook = `
@@ -1265,12 +1147,24 @@ exit 0
 		"--strict-mcp-config",
 		"--mcp-config",
 		JSON.stringify(mcpConfig),
-		"--system-prompt",
-		options.systemPrompt,
 		"--settings",
 		JSON.stringify(settings),
-		options.userMessage,
 	];
+
+	// Either resume an existing session or start a new one with system prompt
+	if (options.resumeSessionId) {
+		args.push("--resume", options.resumeSessionId);
+	} else if (options.systemPrompt) {
+		args.push("--system-prompt", options.systemPrompt);
+	}
+
+	// Use specific session ID if provided (for new sessions we want to resume later)
+	if (options.sessionId && !options.resumeSessionId) {
+		args.push("--session-id", options.sessionId);
+	}
+
+	// Add the user message last
+	args.push(options.userMessage);
 
 	const proc = Bun.spawn(args, {
 		stdout: "pipe",
@@ -1311,8 +1205,9 @@ exit 0
 		}
 	}
 
-	// Return the extracted text content
-	return { output, exitCode };
+	// Return the extracted text content and session ID (for resuming later)
+	const returnSessionId = options.resumeSessionId || options.sessionId;
+	return { output, exitCode, sessionId: returnSessionId };
 }
 
 main().catch(console.error);
