@@ -29,7 +29,7 @@ Your job is to create a revealing task and ${variations} system prompt variation
 
 ## 🚨 CRITICAL RESTRICTIONS 🚨
 
-You are running inside the claude-checker tool directory. DO NOT:
+You are running inside the claude-arena tool directory. DO NOT:
 - Read ANY .ts, .js, .json, or source files in this directory
 - Explore or analyze the tool's own codebase
 - Use Glob, Grep, or Read on any source files

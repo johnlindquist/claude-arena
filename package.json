@@ -1,10 +1,10 @@
 {
-  "name": "claude-checker",
+  "name": "claude-arena",
   "version": "2.0.0",
   "description": "Evaluate and optimize system prompt effectiveness - find the best way to express your system prompts",
   "type": "module",
   "bin": {
-    "claude-checker": "./src/index.ts"
+    "claude-arena": "./src/index.ts"
   },
   "scripts": {
     "check": "bun run src/index.ts",

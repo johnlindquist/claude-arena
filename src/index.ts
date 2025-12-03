@@ -259,9 +259,9 @@ async function main() {
   // Handle --help
   if (flags.help || flags.h) {
     console.log(`
-claude-checker - Evaluate and optimize system prompt effectiveness
+claude-arena - Evaluate and optimize system prompt effectiveness
 
-Usage: claude-checker <system-prompt|file.md> [options]
+Usage: claude-arena <system-prompt|file.md> [options]
 
 The judge will:
   1. Generate a task that reveals system prompt adherence
@@ -278,10 +278,10 @@ Options:
   --help                  Show this help
 
 Examples:
-  claude-checker "code should follow Python's Zen principles"
-  claude-checker ./goals/zen-principles.md
-  claude-checker "avoid code smells: feature envy, shotgun surgery"
-  claude-checker --model opus ./my-design-principles.md
+  claude-arena "code should follow Python's Zen principles"
+  claude-arena ./goals/zen-principles.md
+  claude-arena "avoid code smells: feature envy, shotgun surgery"
+  claude-arena --model opus ./my-design-principles.md
 `);
     process.exit(0);
   }
@@ -290,8 +290,8 @@ Examples:
   const promptArg = positional.join(" ");
   if (!promptArg) {
     console.error("❌ Please provide a system prompt to evaluate");
-    console.error("\nExample: claude-checker \"code should follow Python's Zen principles\"");
-    console.error("         claude-checker ./my-system-prompt.md");
+    console.error("\nExample: claude-arena \"code should follow Python's Zen principles\"");
+    console.error("         claude-arena ./my-system-prompt.md");
     process.exit(1);
   }
 
@@ -324,7 +324,7 @@ Examples:
     ? systemPrompt.slice(0, 60).replace(/\n/g, " ") + "..."
     : systemPrompt.replace(/\n/g, " ");
 
-  console.log("🧪 claude-checker - System Prompt Effectiveness Evaluator");
+  console.log("🏟️  claude-arena - System Prompt Effectiveness Evaluator");
   console.log("━".repeat(55));
   console.log(`Prompt:     ${promptDisplay}`);
   console.log(`Judge:      ${model}. Adjust with --model <model>`);
@@ -558,7 +558,7 @@ async function runClaude(options: {
   const hook = `
 input=$(cat)
 # Auto-approve file operations in the output directory
-if echo "$input" | grep -q 'claude-checker'; then
+if echo "$input" | grep -q 'claude-arena'; then
   echo '{"decision": "approve"}'
   exit 0
 fi

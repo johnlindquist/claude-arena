@@ -1,94 +1,113 @@
-# claude-checker
+# claude-arena
 
-**Evaluate and optimize system prompt effectiveness** - find the best way to express your system prompts in CLAUDE.md.
+**Find the most effective way to write your CLAUDE.md system prompts.**
 
-## What It Does
+Give claude-arena a system prompt, and it will test 5 different ways of expressing it—then tell you which one works best.
 
-Given a system prompt like "code should follow Python's Zen principles", claude-checker:
+## How It Works
 
-1. **Generates a revealing task** - Creates a coding task that would expose whether the system prompt is followed
-2. **Creates 5 system prompt variations** - Different styles of expressing the same system prompt:
-   - **Terse** - Minimal bullet points
-   - **Clear** - Reworded for clarity
-   - **Exhaustive** - Comprehensive with examples
-   - **Visual** - Diagrams, tables, structured format
-   - **Reframed** - Flipped framing (negative→positive)
-3. **Runs each variation** - Tests each against the task using Haiku
-4. **Evaluates and recommends** - Scores each approach and suggests the best system prompt text
+```
+Your System Prompt
+       ↓
+┌──────────────────────────────────────┐
+│  1. DESIGN PHASE (Opus)              │
+│     • Generates a revealing task     │
+│     • Creates 5 prompt variations    │
+└──────────────────────────────────────┘
+       ↓
+┌──────────────────────────────────────┐
+│  2. TEST PHASE (Haiku × 5 parallel)  │
+│     • Runs task with each variation  │
+│     • Captures all outputs           │
+└──────────────────────────────────────┘
+       ↓
+┌──────────────────────────────────────┐
+│  3. EVALUATION PHASE (Opus)          │
+│     • Scores each variation          │
+│     • Recommends the winner          │
+│     • Outputs optimized prompt       │
+└──────────────────────────────────────┘
+```
+
+## The 5 Variation Strategies
+
+| Strategy | Approach |
+|----------|----------|
+| **PERSONA** | Role-based identity framing. Make the AI embody a specific expert. |
+| **EXEMPLAR** | Show, don't tell. Lead with concrete before/after code examples. |
+| **CONSTRAINT** | Hard rules with tripwires. Use MUST/NEVER/ALWAYS with violation callouts. |
+| **SOCRATIC** | Why-first philosophy. Explain reasoning before the rule. |
+| **CHECKLIST** | Gated process with verification steps before each action. |
 
 ## Installation
 
 ```bash
-# Clone and install
-git clone https://github.com/johnlindquist/claude-checker
-cd claude-checker
+git clone https://github.com/johnlindquist/claude-arena
+cd claude-arena
 bun install
 ```
 
 ## Usage
 
 ```bash
-# Basic usage - evaluate a system prompt
+# Pass a system prompt directly
 bun run check "code should follow Python's Zen principles"
 
-# Use Opus as judge (more thorough but slower)
-bun run check --model opus "avoid code smells: feature envy, shotgun surgery"
+# Or pass a markdown file
+bun run check ./my-system-prompt.md
 
-# Test fewer variations
-bun run check --variations 3 "use TDD: write tests before implementation"
-```
-
-## Examples
-
-### Design Principles
-```bash
-bun run check "Beautiful is better than ugly. Explicit is better than implicit. Simple is better than complex."
-```
-
-### Code Smells
-```bash
-bun run check "avoid code smells: feature envy, shotgun surgery, primitive obsession, data clumps"
-```
-
-### TDD
-```bash
-bun run check "always write tests before implementation, follow red-green-refactor"
-```
-
-### TypeScript Strictness
-```bash
-bun run check "never use 'any' type, always define explicit return types"
-```
-
-## How It Works
-
-The judge (Opus by default) orchestrates the entire experiment:
-
-```
-Your System Prompt
-    ↓
-Judge generates task + 5 variations
-    ↓
-Haiku runs task with each variation
-    ↓
-Judge scores and compares results
-    ↓
-Recommendation: best system prompt style + optimized text
+# Options
+bun run check --model sonnet "your prompt"     # Use Sonnet as judge (default: opus)
+bun run check --variations 3 "your prompt"     # Test fewer variations (default: 5)
 ```
 
 ## Output
 
-You'll get:
-- Scores for each variation (0-12 scale)
-- Side-by-side comparison of how each performed
+Each run creates a timestamped directory in your system's temp folder:
+
+```
+/tmp/claude-arena-2024-01-15T10-30/
+├── task.md           # The generated coding task
+├── variation-1.md    # PERSONA variation
+├── variation-2.md    # EXEMPLAR variation
+├── variation-3.md    # CONSTRAINT variation
+├── variation-4.md    # SOCRATIC variation
+├── variation-5.md    # CHECKLIST variation
+├── run-1/            # Haiku's output for variation 1
+├── run-2/            # Haiku's output for variation 2
+├── run-3/            # ...
+├── run-4/
+└── run-5/
+```
+
+The final evaluation includes:
+- Scores for each variation (0-12 scale: Adherence + Integration + Quality + Consistency)
 - Winner with explanation
 - **Optimized system prompt text** ready to paste into your CLAUDE.md
+
+## Examples
+
+```bash
+# Design principles
+bun run check "Beautiful is better than ugly. Simple is better than complex."
+
+# Code quality rules
+bun run check "avoid code smells: feature envy, shotgun surgery, primitive obsession"
+
+# TDD workflow
+bun run check "always write tests before implementation, follow red-green-refactor"
+
+# TypeScript strictness
+bun run check "never use 'any' type, always define explicit return types"
+
+# From a file
+bun run check ./goals/zen-principles.md
+```
 
 ## Requirements
 
 - [Bun](https://bun.sh/) >= 1.0.0
-- [Claude Code CLI](https://claude.ai/code) installed and authenticated
-- API access (uses Haiku for tests, Sonnet/Opus for judging)
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
 
 ## License
 
