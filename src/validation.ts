@@ -11,43 +11,43 @@
  * Validated form data - only contains values that have passed validation
  */
 export interface ValidRegistrationForm {
-  email: string;
-  password: string;
-  confirmPassword: string;
-  age?: number;
-  role: "admin" | "user";
+	email: string;
+	password: string;
+	confirmPassword: string;
+	age?: number;
+	role: "admin" | "user";
 }
 
 /**
  * Field-specific validation error
  */
 export interface FieldError {
-  field: string;
-  message: string;
+	field: string;
+	message: string;
 }
 
 /**
  * Validation result - discriminated union making success/failure clear
  */
 export type ValidationResult =
-  | {
-      success: true;
-      data: ValidRegistrationForm;
-    }
-  | {
-      success: false;
-      errors: FieldError[];
-    };
+	| {
+			success: true;
+			data: ValidRegistrationForm;
+	  }
+	| {
+			success: false;
+			errors: FieldError[];
+	  };
 
 /**
  * Input form data (may have invalid values)
  */
 export interface RegistrationForm {
-  email?: string;
-  password?: string;
-  confirmPassword?: string;
-  age?: number;
-  role?: string;
+	email?: string;
+	password?: string;
+	confirmPassword?: string;
+	age?: number;
+	role?: string;
 }
 
 // ============================================================================
@@ -55,94 +55,91 @@ export interface RegistrationForm {
 // ============================================================================
 
 function parseEmail(value: unknown): string {
-  if (typeof value !== "string") {
-    throw new Error("Email must be a string");
-  }
+	if (typeof value !== "string") {
+		throw new Error("Email must be a string");
+	}
 
-  const trimmed = value.trim();
-  if (trimmed === "") {
-    throw new Error("Email is required");
-  }
+	const trimmed = value.trim();
+	if (trimmed === "") {
+		throw new Error("Email is required");
+	}
 
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(trimmed)) {
-    throw new Error("Email must be in valid format (e.g., user@example.com)");
-  }
+	const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+	if (!emailRegex.test(trimmed)) {
+		throw new Error("Email must be in valid format (e.g., user@example.com)");
+	}
 
-  return trimmed;
+	return trimmed;
 }
 
 function parsePassword(value: unknown): string {
-  if (typeof value !== "string") {
-    throw new Error("Password must be a string");
-  }
+	if (typeof value !== "string") {
+		throw new Error("Password must be a string");
+	}
 
-  if (value === "") {
-    throw new Error("Password is required");
-  }
+	if (value === "") {
+		throw new Error("Password is required");
+	}
 
-  if (value.length < 8) {
-    throw new Error("Password must be at least 8 characters long");
-  }
+	if (value.length < 8) {
+		throw new Error("Password must be at least 8 characters long");
+	}
 
-  if (!/\d/.test(value)) {
-    throw new Error("Password must contain at least one number");
-  }
+	if (!/\d/.test(value)) {
+		throw new Error("Password must contain at least one number");
+	}
 
-  return value;
+	return value;
 }
 
-function parseConfirmPassword(
-  value: unknown,
-  password: string
-): string {
-  if (typeof value !== "string") {
-    throw new Error("Confirm password must be a string");
-  }
+function parseConfirmPassword(value: unknown, password: string): string {
+	if (typeof value !== "string") {
+		throw new Error("Confirm password must be a string");
+	}
 
-  if (value === "") {
-    throw new Error("Confirm password is required");
-  }
+	if (value === "") {
+		throw new Error("Confirm password is required");
+	}
 
-  if (value !== password) {
-    throw new Error("Passwords do not match");
-  }
+	if (value !== password) {
+		throw new Error("Passwords do not match");
+	}
 
-  return value;
+	return value;
 }
 
 function parseAge(value: unknown): number | undefined {
-  if (value === undefined || value === null) {
-    return undefined;
-  }
+	if (value === undefined || value === null) {
+		return undefined;
+	}
 
-  const num = Number(value);
-  if (!Number.isInteger(num)) {
-    throw new Error("Age must be a whole number");
-  }
+	const num = Number(value);
+	if (!Number.isInteger(num)) {
+		throw new Error("Age must be a whole number");
+	}
 
-  if (num < 18 || num > 120) {
-    throw new Error("Age must be between 18 and 120");
-  }
+	if (num < 18 || num > 120) {
+		throw new Error("Age must be between 18 and 120");
+	}
 
-  return num;
+	return num;
 }
 
 function parseRole(value: unknown): "admin" | "user" {
-  if (typeof value !== "string") {
-    throw new Error("Role must be a string");
-  }
+	if (typeof value !== "string") {
+		throw new Error("Role must be a string");
+	}
 
-  const trimmed = value.trim();
-  if (trimmed === "") {
-    throw new Error("Role is required");
-  }
+	const trimmed = value.trim();
+	if (trimmed === "") {
+		throw new Error("Role is required");
+	}
 
-  if (trimmed !== "admin" && trimmed !== "user") {
-    throw new Error('Role must be either "admin" or "user"');
-  }
+	if (trimmed !== "admin" && trimmed !== "user") {
+		throw new Error('Role must be either "admin" or "user"');
+	}
 
-  return trimmed as "admin" | "user";
+	return trimmed as "admin" | "user";
 }
 
 // ============================================================================
@@ -155,91 +152,89 @@ function parseRole(value: unknown): "admin" | "user" {
  * @returns ValidationResult with parsed data or field errors
  */
 export function validateRegistrationForm(form: unknown): ValidationResult {
-  // Type guard: ensure we have an object
-  if (typeof form !== "object" || form === null) {
-    return {
-      success: false,
-      errors: [{ field: "email", message: "Form data must be an object" }],
-    };
-  }
+	// Type guard: ensure we have an object
+	if (typeof form !== "object" || form === null) {
+		return {
+			success: false,
+			errors: [{ field: "email", message: "Form data must be an object" }],
+		};
+	}
 
-  const record = form as Record<string, unknown>;
-  const errors: FieldError[] = [];
+	const record = form as Record<string, unknown>;
+	const errors: FieldError[] = [];
 
-  // Validate email (required)
-  let email: string;
-  try {
-    email = parseEmail(record.email);
-  } catch (err) {
-    errors.push({
-      field: "email",
-      message: err instanceof Error ? err.message : "Invalid email",
-    });
-  }
+	// Validate email (required)
+	let email: string | undefined;
+	try {
+		email = parseEmail(record.email);
+	} catch (err) {
+		errors.push({
+			field: "email",
+			message: err instanceof Error ? err.message : "Invalid email",
+		});
+	}
 
-  // Validate password (required)
-  let password: string;
-  try {
-    password = parsePassword(record.password);
-  } catch (err) {
-    errors.push({
-      field: "password",
-      message: err instanceof Error ? err.message : "Invalid password",
-    });
-  }
+	// Validate password (required)
+	let password: string | undefined;
+	try {
+		password = parsePassword(record.password);
+	} catch (err) {
+		errors.push({
+			field: "password",
+			message: err instanceof Error ? err.message : "Invalid password",
+		});
+	}
 
-  // Validate confirmPassword (required) - depends on password
-  let confirmPassword: string;
-  try {
-    confirmPassword = parseConfirmPassword(
-      record.confirmPassword,
-      password || ""
-    );
-  } catch (err) {
-    errors.push({
-      field: "confirmPassword",
-      message: err instanceof Error ? err.message : "Invalid confirm password",
-    });
-  }
+	// Validate confirmPassword (required) - depends on password
+	let confirmPassword: string | undefined;
+	try {
+		confirmPassword = parseConfirmPassword(record.confirmPassword, password ?? "");
+	} catch (err) {
+		errors.push({
+			field: "confirmPassword",
+			message: err instanceof Error ? err.message : "Invalid confirm password",
+		});
+	}
 
-  // Validate age (optional)
-  let age: number | undefined;
-  try {
-    age = parseAge(record.age);
-  } catch (err) {
-    errors.push({
-      field: "age",
-      message: err instanceof Error ? err.message : "Invalid age",
-    });
-  }
+	// Validate age (optional)
+	let age: number | undefined;
+	try {
+		age = parseAge(record.age);
+	} catch (err) {
+		errors.push({
+			field: "age",
+			message: err instanceof Error ? err.message : "Invalid age",
+		});
+	}
 
-  // Validate role (required)
-  let role: "admin" | "user";
-  try {
-    role = parseRole(record.role);
-  } catch (err) {
-    errors.push({
-      field: "role",
-      message: err instanceof Error ? err.message : "Invalid role",
-    });
-  }
+	// Validate role (required)
+	let role: "admin" | "user" | undefined;
+	try {
+		role = parseRole(record.role);
+	} catch (err) {
+		errors.push({
+			field: "role",
+			message: err instanceof Error ? err.message : "Invalid role",
+		});
+	}
 
-  // Return errors if any validation failed
-  if (errors.length > 0) {
-    return { success: false, errors };
-  }
+	// Return errors if any validation failed
+	if (errors.length > 0) {
+		return { success: false, errors };
+	}
 
-  // All validations passed - return parsed data
-  return {
-    success: true,
-    data: {
-      email,
-      password,
-      confirmPassword,
-      age,
-      role,
-    },
-  };
+	// All validations passed - return parsed data
+	// At this point, all required fields are defined (no errors means parsing succeeded)
+	return {
+		success: true,
+		data: {
+			email: email!,
+			password: password!,
+			confirmPassword: confirmPassword!,
+			age,
+			role: role!,
+		},
+	};
 }
 
 // ============================================================================
@@ -251,35 +246,35 @@ export function validateRegistrationForm(form: unknown): ValidationResult {
  * Useful for real-time validation as user types
  */
 export function validateField(
-  fieldName: keyof ValidRegistrationForm,
-  value: unknown,
-  context?: { password?: string }
+	fieldName: keyof ValidRegistrationForm,
+	value: unknown,
+	context?: { password?: string },
 ): { success: true } | { success: false; message: string } {
-  try {
-    switch (fieldName) {
-      case "email":
-        parseEmail(value);
-        break;
-      case "password":
-        parsePassword(value);
-        break;
-      case "confirmPassword":
-        parseConfirmPassword(value, context?.password || "");
-        break;
-      case "age":
-        parseAge(value);
-        break;
-      case "role":
-        parseRole(value);
-        break;
-    }
-    return { success: true };
-  } catch (err) {
-    return {
-      success: false,
-      message: err instanceof Error ? err.message : "Validation failed",
-    };
-  }
+	try {
+		switch (fieldName) {
+			case "email":
+				parseEmail(value);
+				break;
+			case "password":
+				parsePassword(value);
+				break;
+			case "confirmPassword":
+				parseConfirmPassword(value, context?.password || "");
+				break;
+			case "age":
+				parseAge(value);
+				break;
+			case "role":
+				parseRole(value);
+				break;
+		}
+		return { success: true };
+	} catch (err) {
+		return {
+			success: false,
+			message: err instanceof Error ? err.message : "Validation failed",
+		};
+	}
 }
 
 /**
@@ -291,22 +286,24 @@ export function validateField(
  * @returns Object with isValid flag and errors array
  */
 export function validateSingleFieldWithErrors(
-  fieldName: string,
-  value: unknown,
-  formData?: RegistrationForm
+	fieldName: string,
+	value: unknown,
+	formData?: RegistrationForm,
 ): { isValid: boolean; errors: FieldError[] } {
-  const result = validateField(fieldName as keyof ValidRegistrationForm, value, {
-    password: formData?.password,
-  });
+	const result = validateField(fieldName as keyof ValidRegistrationForm, value, {
+		password: formData?.password,
+	});
 
-  if (result.success) {
-    return { isValid: true, errors: [] };
-  }
+	if (result.success) {
+		return { isValid: true, errors: [] };
+	}
 
-  return {
-    isValid: false,
-    errors: [{ field: fieldName, message: (result as { success: false; message: string }).message }],
-  };
+	return {
+		isValid: false,
+		errors: [
+			{ field: fieldName, message: (result as { success: false; message: string }).message },
+		],
+	};
 }
 
 /**
@@ -316,7 +313,10 @@ export function validateSingleFieldWithErrors(
  * @returns Array of error messages for that field
  */
 export function getFieldErrorMessages(fieldName: string, form: RegistrationForm): string[] {
-  const result = validateSingleFieldWithErrors(fieldName, form[fieldName as keyof RegistrationForm], form);
-  return result.errors.map((err) => err.message);
+	const result = validateSingleFieldWithErrors(
+		fieldName,
+		form[fieldName as keyof RegistrationForm],
+		form,
+	);
+	return result.errors.map((err) => err.message);
 }
-

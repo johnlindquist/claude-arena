@@ -1,31 +1,32 @@
 #!/usr/bin/env bun
 // src/index.ts
 
-import { resolve, join } from "node:path";
-import { homedir } from "node:os";
 import { mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+import { looksLikePath, parseArgs } from "./args-parser";
+import { resolveImports } from "./import-resolver";
+import { confirm, selectOption } from "./prompt-input";
 import {
-  buildDesignPrompt,
-  buildVariationsOnlyPrompt,
-  buildEvaluationPrompt,
-  getOutputDir,
   type VariationInfo,
   type VariationResult,
+  buildDesignPrompt,
+  buildEvaluationPrompt,
+  buildVariationsOnlyPrompt,
+  getOutputDir,
 } from "./prompts";
-import { parseArgs, looksLikePath } from "./args-parser";
-import { parseVariationInfo } from "./variation-parser";
-import { resolveImports } from "./import-resolver";
 import {
-  parseStreamLine,
+  type StreamParserState,
   accumulateTextFromEvent,
+  createStreamParserState,
   extractToolUses,
   extractUsageStats,
   formatToolUse,
   formatUsageStats,
-  createStreamParserState,
+  parseStreamLine,
   processStreamChunk,
-  type StreamParserState,
 } from "./stream-parser";
+import { parseVariationInfo } from "./variation-parser";
 
 /**
  * Parse stream-json output from Claude CLI.
@@ -33,7 +34,7 @@ import {
  */
 async function parseStreamJson(
   stream: ReadableStream,
-  destination: NodeJS.WriteStream
+  destination: NodeJS.WriteStream,
 ): Promise<string> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -117,10 +118,7 @@ async function parseStreamJson(
  * Simple tee helper - reads a stream, writes to destination, captures content.
  * Used for stderr or non-stream-json output.
  */
-async function teeStream(
-  stream: ReadableStream,
-  destination: NodeJS.WriteStream
-): Promise<string> {
+async function teeStream(stream: ReadableStream, destination: NodeJS.WriteStream): Promise<string> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let fullContent = "";
@@ -147,7 +145,7 @@ async function teeStream(
  */
 async function parseStreamJsonWithStatus(
   stream: ReadableStream,
-  onStatus?: (status: string) => void
+  onStatus?: (status: string) => void,
 ): Promise<string> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -192,7 +190,8 @@ async function parseStreamJsonWithStatus(
             if (block.type === "tool_use" && block.id && !seenToolIds.has(block.id)) {
               seenToolIds.add(block.id);
               const toolName = block.name || "Tool";
-              const filePath = block.input?.file_path || block.input?.path || block.input?.command || "";
+              const filePath =
+                block.input?.file_path || block.input?.path || block.input?.command || "";
               const shortPath = filePath.split("/").pop()?.slice(0, 15) || "";
               onStatus?.(shortPath ? `${toolName}:${shortPath}` : toolName);
             }
@@ -246,6 +245,7 @@ Options:
   --user                  Test your ~/.claude/CLAUDE.md configuration
                           If combined with a prompt, appends to your config
   --task <task>           Provide a specific task instead of AI-generated one
+  --debug                 Write resolved system prompt to output dir for inspection
   --help                  Show this help
 
 Examples:
@@ -265,6 +265,7 @@ Examples:
   const testModel = flags.testmodel || "haiku";
   const model = flags.model || "opus";
   const variations = Number(flags.variations) || 5;
+  const debugMode = flags.debug === "true";
   const outputDir = getOutputDir();
 
   // Get the system prompt from positional args
@@ -293,7 +294,9 @@ Examples:
     if (promptArg) {
       // Append additional prompt to user config
       systemPrompt = `${userConfig}\n\n---\n\n## Additional Instructions\n\n${promptArg}`;
-      console.log(`   + Appending: "${promptArg.slice(0, 50)}${promptArg.length > 50 ? '...' : ''}"`);
+      console.log(
+        `   + Appending: "${promptArg.slice(0, 50)}${promptArg.length > 50 ? "..." : ""}"`,
+      );
     } else {
       systemPrompt = userConfig;
     }
@@ -304,7 +307,7 @@ Examples:
     // Standard mode: require a prompt
     if (!promptArg) {
       console.error("❌ Please provide a system prompt to evaluate");
-      console.error("\nExample: claude-arena \"code should follow Python's Zen principles\"");
+      console.error('\nExample: claude-arena "code should follow Python\'s Zen principles"');
       console.error("         claude-arena ./my-system-prompt.md");
       console.error("         claude-arena --user  # to test your CLAUDE.md");
       process.exit(1);
@@ -331,9 +334,10 @@ Examples:
   }
 
   // Truncate system prompt for display
-  const promptDisplay = systemPrompt.length > 60
-    ? systemPrompt.slice(0, 60).replace(/\n/g, " ") + "..."
-    : systemPrompt.replace(/\n/g, " ");
+  const promptDisplay =
+    systemPrompt.length > 60
+      ? `${systemPrompt.slice(0, 60).replace(/\n/g, " ")}...`
+      : systemPrompt.replace(/\n/g, " ");
 
   console.log("🏟️  claude-arena - System Prompt Effectiveness Evaluator");
   console.log("━".repeat(55));
@@ -342,10 +346,10 @@ Examples:
   console.log(`Test model: ${testModel}. Adjust with --test-model <model>`);
   console.log(`Variations: ${variations}. Adjust with --variations <n>`);
   if (userMode) {
-    console.log(`Mode:       user (testing ~/.claude/CLAUDE.md)`);
+    console.log("Mode:       user (testing ~/.claude/CLAUDE.md)");
   }
   if (userTask) {
-    console.log(`Task:       user-provided`);
+    console.log("Task:       user-provided");
   }
   console.log("━".repeat(55));
   console.log("");
@@ -353,6 +357,185 @@ Examples:
 
   // Create output directory
   await mkdir(outputDir, { recursive: true });
+
+  // Debug mode: write resolved system prompt to file for inspection
+  if (debugMode) {
+    const debugPromptPath = join(outputDir, "debug-resolved-prompt.md");
+    await Bun.write(debugPromptPath, systemPrompt);
+    console.log(`\n🔍 Debug: Resolved system prompt written to: ${debugPromptPath}`);
+    console.log(`   Length: ${systemPrompt.length} characters`);
+    console.log(`   Contains unresolved @imports: ${systemPrompt.includes("@~/") || systemPrompt.includes("@./")}`);
+  }
+
+  // ============================================
+  // Check for large system prompts
+  // ============================================
+  const LARGE_PROMPT_THRESHOLD = 15000; // characters
+
+  if (systemPrompt.length > LARGE_PROMPT_THRESHOLD) {
+    console.log(`\n⚠️  Large system prompt detected: ${systemPrompt.length.toLocaleString()} characters`);
+    console.log("");
+    console.log("   Context constraints may affect results. For better stress testing,");
+    console.log("   consider testing a specific section of your system prompt rather");
+    console.log("   than the entire configuration.");
+    console.log("");
+
+    const selection = await selectOption("How would you like to proceed?", [
+      "Continue with the full system prompt",
+      "Have the judge suggest a focused section to test",
+      "Describe the section you want to test",
+      "Cancel and provide a smaller prompt manually",
+    ]);
+
+    if (selection === 3) {
+      console.log("\n👋 Cancelled. Try running with a specific section of your prompt:");
+      console.log('   claude-arena "your specific rules here"');
+      console.log("   claude-arena ./path/to/focused-rules.md");
+      process.exit(0);
+    }
+
+    if (selection === 2) {
+      const { prompt } = await import("./prompt-input");
+      console.log("");
+      const userDescription = await prompt("Describe the section you want to test: ");
+
+      if (!userDescription.trim()) {
+        console.log("⚠️  No description provided, continuing with full prompt");
+      } else {
+        console.log(`\n🔍 Finding section matching: "${userDescription}"...\n`);
+
+        const extractPrompt = `You are extracting a specific section from a large system prompt based on a user's description.
+
+<system-prompt>
+${systemPrompt}
+</system-prompt>
+
+The user wants to test this section: "${userDescription}"
+
+Find and extract the relevant rules/instructions from the system prompt that match what the user described.
+Include any related rules that are closely connected to the described section.
+Keep the extraction focused but complete enough to be testable.
+
+Format your response as:
+
+## Matched Section
+
+[Explain what you found and why it matches - 2-3 sentences]
+
+## Extracted Rules
+
+\`\`\`
+[The extracted rules/instructions to test]
+\`\`\`
+
+## Related Rules Also Included
+
+[Brief note on any related rules you included for completeness]`;
+
+        const extractResult = await runClaude({
+          model,
+          systemPrompt: extractPrompt,
+          userMessage: "Find and extract the described section.",
+          streamOutput: true,
+        });
+
+        if (extractResult.exitCode !== 0) {
+          console.error("\n❌ Failed to extract section");
+        } else {
+          const extractedMatch = extractResult.output.match(/```\n?([\s\S]*?)\n?```/);
+          if (extractedMatch && extractedMatch[1]) {
+            const extractedPrompt = extractedMatch[1].trim();
+            console.log(`\n📋 Extracted section: ${extractedPrompt.length.toLocaleString()} characters`);
+
+            const useExtracted = await confirm("\nUse this extracted section?", true);
+            if (useExtracted) {
+              systemPrompt = extractedPrompt;
+              console.log("✅ Using extracted section");
+            } else {
+              console.log("📄 Continuing with full prompt");
+            }
+          } else {
+            console.log("⚠️  Could not extract section, continuing with full prompt");
+          }
+        }
+      }
+    }
+
+    if (selection === 1) {
+      console.log("\n🔍 Asking judge to suggest a focused section to test...\n");
+
+      const suggestionPrompt = `You are analyzing a large system prompt to suggest the most valuable section to stress test.
+
+<system-prompt>
+${systemPrompt}
+</system-prompt>
+
+Analyze this system prompt and identify:
+1. The MOST UNIQUE/SPECIFIC rules (not generic best practices)
+2. Rules that would benefit most from stress testing
+3. Rules that have clear tool preferences or workflow requirements
+
+Output a focused subset (under 5000 characters) that contains the highest-value rules to test.
+Format your response as:
+
+## Suggested Focus Area
+
+[Explain why you selected this section - 2-3 sentences]
+
+## Focused System Prompt
+
+\`\`\`
+[The focused subset of rules to test]
+\`\`\`
+
+## Rules Excluded
+
+[Brief list of what was left out and why]`;
+
+      const suggestionResult = await runClaude({
+        model,
+        systemPrompt: suggestionPrompt,
+        userMessage: "Analyze and suggest a focused section.",
+        streamOutput: true,
+      });
+
+      if (suggestionResult.exitCode !== 0) {
+        console.error("\n❌ Failed to get suggestion");
+        process.exit(1);
+      }
+
+      // Extract the focused prompt from the response
+      const focusedMatch = suggestionResult.output.match(/```\n?([\s\S]*?)\n?```/);
+      if (focusedMatch && focusedMatch[1]) {
+        const focusedPrompt = focusedMatch[1].trim();
+        console.log(`\n📋 Suggested focused prompt: ${focusedPrompt.length.toLocaleString()} characters`);
+
+        const useFocused = await confirm("\nUse this focused prompt instead?", true);
+        if (useFocused) {
+          systemPrompt = focusedPrompt;
+          console.log("✅ Using focused prompt");
+        } else {
+          console.log("📄 Continuing with full prompt");
+        }
+      } else {
+        console.log("⚠️  Could not extract focused prompt, continuing with full prompt");
+      }
+    }
+
+    // selection === 0 means continue with full prompt, no action needed
+    if (selection === 0) {
+      console.log("\n📄 Continuing with full system prompt...");
+    }
+  }
+
+  // Save the effective prompt that will be tested (especially important if focused)
+  const effectivePromptPath = join(outputDir, "effective-prompt.md");
+  await Bun.write(effectivePromptPath, systemPrompt);
+
+  // Show token estimate (rough: ~4 chars per token)
+  const estimatedTokens = Math.ceil(systemPrompt.length / 4);
+  console.log(`\n📊 Testing prompt: ${systemPrompt.length.toLocaleString()} chars (~${estimatedTokens.toLocaleString()} tokens)`);
+  console.log(`   Saved to: ${effectivePromptPath}`);
 
   // ============================================
   // STEP 1: Design Phase - Generate task and variations
@@ -367,7 +550,7 @@ Examples:
 
     task = userTask;
     await Bun.write(taskPath, task);
-    console.log(`   📝 Using user-provided task`);
+    console.log("   📝 Using user-provided task");
 
     const designPrompt = buildVariationsOnlyPrompt(systemPrompt, variations);
     const designResult = await runClaude({
@@ -486,7 +669,7 @@ Examples:
           variationStatus.set(i, status);
           updateStatus();
         },
-      })
+      }),
     );
   }
 
@@ -530,7 +713,7 @@ Examples:
     process.exit(1);
   }
 
-  console.log(`\n   Summary: ${successCount} succeeded, ${failCount} failed`)
+  console.log(`\n   Summary: ${successCount} succeeded, ${failCount} failed`);
 
   // ============================================
   // STEP 3: Evaluate results
@@ -542,7 +725,7 @@ Examples:
     task,
     variationInfo,
     results,
-    outputDir
+    outputDir,
   );
 
   const evalResult = await runClaude({
@@ -552,7 +735,180 @@ Examples:
     streamOutput: true,
   });
 
-  console.log("\n" + "━".repeat(55));
+  // Write session summary
+  const summaryPath = join(outputDir, "session-summary.md");
+  const summary = `# Claude Arena Session Summary
+
+**Date**: ${new Date().toISOString()}
+**Mode**: ${userMode ? "user (~/.claude/CLAUDE.md)" : "standard"}
+**Judge Model**: ${model}
+**Test Model**: ${testModel}
+
+## Prompt Tested
+
+- **Characters**: ${systemPrompt.length.toLocaleString()}
+- **Estimated Tokens**: ~${Math.ceil(systemPrompt.length / 4).toLocaleString()}
+- **Full prompt**: [effective-prompt.md](./effective-prompt.md)
+
+## Task
+
+[task.md](./task.md)
+
+## Variations Tested
+
+| # | Strategy | Result |
+|---|----------|--------|
+${variationInfo.map((v) => {
+  const result = results.find((r) => r.variationNumber === v.number);
+  const status = result ? (result.exitCode === 0 ? "✅" : "⚠️") : "❌";
+  return `| ${v.number} | ${v.strategy} | ${status} |`;
+}).join("\n")}
+
+## Output Directories
+
+${variationInfo.map((v) => `- [run-${v.number}/](./run-${v.number}/) - ${v.strategy}`).join("\n")}
+`;
+
+  await Bun.write(summaryPath, summary);
+  console.log(`\n📋 Session summary: ${summaryPath}`);
+
+  // In user mode, offer to apply the optimized prompt to CLAUDE.md
+  if (userMode && evalResult.exitCode === 0) {
+    console.log(`\n${"━".repeat(55)}`);
+
+    const applySelection = await selectOption(
+      "The evaluation is complete. What would you like to do?",
+      [
+        "Apply the optimized prompt to ~/.claude/CLAUDE.md",
+        "View the recommended changes first",
+        "Exit without changes",
+      ],
+    );
+
+    if (applySelection === 0 || applySelection === 1) {
+      // Extract the optimized prompt from the evaluation output
+      const optimizedMatch = evalResult.output.match(
+        /\*\*Optimized Version\*\*:?\s*\n```(?:markdown)?\n([\s\S]*?)\n```/i,
+      );
+
+      if (!optimizedMatch || !optimizedMatch[1]) {
+        console.log("\n⚠️  Could not find optimized prompt in evaluation output.");
+        console.log("   You can manually review the evaluation and update your CLAUDE.md.");
+      } else {
+        const optimizedPrompt = optimizedMatch[1].trim();
+
+        if (applySelection === 1) {
+          // Show the recommended changes
+          console.log("\n📝 Recommended optimized prompt:\n");
+          console.log("─".repeat(50));
+          console.log(optimizedPrompt);
+          console.log("─".repeat(50));
+          console.log(`\n(${optimizedPrompt.length.toLocaleString()} characters)\n`);
+
+          const confirmApply = await confirm("Apply this to your ~/.claude/CLAUDE.md?", false);
+          if (!confirmApply) {
+            console.log("\n👋 No changes made.");
+            process.exit(evalResult.exitCode);
+          }
+        }
+
+        // Ask how to apply
+        const applyMethod = await selectOption(
+          "How should the optimized prompt be applied?",
+          [
+            "Replace the entire CLAUDE.md with the optimized version",
+            "Have the judge intelligently merge changes into existing CLAUDE.md",
+            "Append as a new section at the end",
+            "Cancel - don't make changes",
+          ],
+        );
+
+        if (applyMethod === 3) {
+          console.log("\n👋 No changes made.");
+          process.exit(evalResult.exitCode);
+        }
+
+        const claudeMdPath = join(homedir(), ".claude", "CLAUDE.md");
+        const currentContent = await Bun.file(claudeMdPath).text();
+
+        if (applyMethod === 0) {
+          // Full replacement
+          const backupPath = join(homedir(), ".claude", `CLAUDE.md.backup.${Date.now()}`);
+          await Bun.write(backupPath, currentContent);
+          await Bun.write(claudeMdPath, optimizedPrompt);
+          console.log(`\n✅ Applied optimized prompt to ~/.claude/CLAUDE.md`);
+          console.log(`   Backup saved to: ${backupPath}`);
+        } else if (applyMethod === 1) {
+          // Intelligent merge
+          console.log("\n🔍 Asking judge to merge changes intelligently...\n");
+
+          const mergePrompt = `You are merging an optimized system prompt into an existing CLAUDE.md file.
+
+## Current CLAUDE.md
+
+<current>
+${currentContent}
+</current>
+
+## Optimized Prompt (from stress testing)
+
+<optimized>
+${optimizedPrompt}
+</optimized>
+
+## Your Task
+
+Intelligently merge the optimized prompt into the current CLAUDE.md:
+
+1. **Preserve structure** - Keep the existing organization and imports (@~/.claude/...)
+2. **Update relevant sections** - Replace or enhance sections that the optimized prompt improves
+3. **Don't duplicate** - If the optimized prompt covers something already in current, pick the better version
+4. **Keep unrelated content** - Don't remove sections that the optimized prompt doesn't address
+
+Output ONLY the merged CLAUDE.md content, no explanations:
+
+\`\`\`markdown
+[merged content here]
+\`\`\``;
+
+          const mergeResult = await runClaude({
+            model,
+            systemPrompt: mergePrompt,
+            userMessage: "Merge the optimized prompt into the existing CLAUDE.md.",
+            streamOutput: true,
+          });
+
+          if (mergeResult.exitCode !== 0) {
+            console.error("\n❌ Failed to merge changes");
+          } else {
+            const mergedMatch = mergeResult.output.match(/```(?:markdown)?\n([\s\S]*?)\n```/);
+            if (mergedMatch && mergedMatch[1]) {
+              const mergedContent = mergedMatch[1].trim();
+              const backupPath = join(homedir(), ".claude", `CLAUDE.md.backup.${Date.now()}`);
+              await Bun.write(backupPath, currentContent);
+              await Bun.write(claudeMdPath, mergedContent);
+              console.log(`\n✅ Merged changes into ~/.claude/CLAUDE.md`);
+              console.log(`   Backup saved to: ${backupPath}`);
+            } else {
+              console.log("\n⚠️  Could not extract merged content. No changes made.");
+            }
+          }
+        } else if (applyMethod === 2) {
+          // Append as new section
+          const appendedContent = `${currentContent}\n\n---\n\n## Optimized Rules (from claude-arena ${new Date().toISOString().split("T")[0]})\n\n${optimizedPrompt}`;
+          const backupPath = join(homedir(), ".claude", `CLAUDE.md.backup.${Date.now()}`);
+          await Bun.write(backupPath, currentContent);
+          await Bun.write(claudeMdPath, appendedContent);
+          console.log(`\n✅ Appended optimized prompt to ~/.claude/CLAUDE.md`);
+          console.log(`   Backup saved to: ${backupPath}`);
+        }
+      }
+    } else {
+      console.log("\n👋 No changes made.");
+    }
+  }
+
+  console.log(`\n${"━".repeat(55)}`);
   console.log("Want to refine the results or apply the optimized prompt?");
   console.log("Continue interactively with: claude --resume");
   console.log("━".repeat(55));
@@ -575,41 +931,43 @@ interface RunVariationOptions {
  * Uses stream-json format, captures stdout quietly to avoid interleaved parallel output
  */
 async function runVariation(options: RunVariationOptions): Promise<VariationResult> {
-  const {
-    variationNumber,
-    task,
-    variationContent,
-    workDir,
-    testModel,
-    settingSources,
-    onStatus,
-  } = options;
+  const { variationNumber, task, variationContent, workDir, testModel, settingSources, onStatus } =
+    options;
 
   try {
-    const mcpConfig = { mcpServers: {} };
     const settings = {
-      "sandbox": {
-        "enabled": true,
-        "autoAllowBashIfSandboxed": true
+      sandbox: {
+        enabled: true,
+        autoAllowBashIfSandboxed: true,
       },
-      "permissions": {
-        "defaultMode": "acceptEdits"
-      }
-    }
+      permissions: {
+        defaultMode: "bypassPermissions",
+      },
+    };
 
     // Build args, conditionally including --append-system-prompt only if content is non-empty
     const args = [
       "claude",
-      "--model", testModel,
+      "--model",
+      testModel,
       "--print",
-      "--output-format", "stream-json",
+      "--output-format",
+      "stream-json",
       "--verbose",
       `git init && complete this task in full:\n\n${task}\n\n--- CRITICAL: Once complete, diff all of the changed files. NEVER SUMMARIZE!`,
-      "--permission-mode", "bypassPermissions",
-      "--setting-sources", settingSources,
-      "--settings", JSON.stringify(settings),
-      "--mcp-config", JSON.stringify(mcpConfig),
+      "--permission-mode",
+      "bypassPermissions",
+      "--setting-sources",
+      settingSources,
+      "--settings",
+      JSON.stringify(settings),
     ];
+
+    // Only override MCP config for isolated (non-user) variations
+    // In user mode, let Claude CLI load from default locations
+    if (settingSources !== "user") {
+      args.push("--mcp-config", JSON.stringify({ mcpServers: {} }));
+    }
 
     // Only append system prompt if there's content to append
     if (variationContent) {
@@ -682,14 +1040,20 @@ exit 0
   const args = [
     "claude",
     "--print",
-    "--output-format", "stream-json",
+    "--output-format",
+    "stream-json",
     "--verbose",
-    "--model", options.model,
-    "--setting-sources", "",
+    "--model",
+    options.model,
+    "--setting-sources",
+    "",
     "--strict-mcp-config",
-    "--mcp-config", JSON.stringify(mcpConfig),
-    "--system-prompt", options.systemPrompt,
-    "--settings", JSON.stringify(settings),
+    "--mcp-config",
+    JSON.stringify(mcpConfig),
+    "--system-prompt",
+    options.systemPrompt,
+    "--settings",
+    JSON.stringify(settings),
     options.userMessage,
   ];
 

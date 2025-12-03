@@ -1,44 +1,48 @@
 {
-  "name": "claude-arena",
-  "version": "2.0.0",
-  "description": "Evaluate and optimize system prompt effectiveness - find the best way to express your system prompts",
-  "type": "module",
-  "bin": {
-    "claude-arena": "./src/index.ts"
-  },
-  "files": [
-    "src"
-  ],
-  "scripts": {
-    "check": "bun run src/index.ts",
-    "test": "vitest"
-  },
-  "keywords": [
-    "claude",
-    "claude-code",
-    "claude.md",
-    "system-prompt",
-    "prompt-engineering",
-    "prompt-testing",
-    "ai",
-    "evaluation"
-  ],
-  "author": "John Lindquist",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/johnlindquist/claude-arena.git"
-  },
-  "homepage": "https://github.com/johnlindquist/claude-arena#readme",
-  "bugs": {
-    "url": "https://github.com/johnlindquist/claude-arena/issues"
-  },
-  "devDependencies": {
-    "@types/bun": "latest",
-    "typescript": "^5",
-    "vitest": "latest"
-  },
-  "engines": {
-    "bun": ">=1.0.0"
-  }
+	"name": "claude-arena",
+	"version": "2.0.0",
+	"description": "Evaluate and optimize system prompt effectiveness - find the best way to express your system prompts",
+	"type": "module",
+	"bin": {
+		"claude-arena": "./src/index.ts"
+	},
+	"files": ["src"],
+	"scripts": {
+		"start": "bun run src/index.ts",
+		"test": "vitest",
+		"typecheck": "tsc --noEmit",
+		"lint": "biome lint --write .",
+		"format": "biome format --write .",
+		"check": "biome check --write .",
+		"ci": "biome check . && tsc --noEmit"
+	},
+	"keywords": [
+		"claude",
+		"claude-code",
+		"claude.md",
+		"system-prompt",
+		"prompt-engineering",
+		"prompt-testing",
+		"ai",
+		"evaluation"
+	],
+	"author": "John Lindquist",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/johnlindquist/claude-arena.git"
+	},
+	"homepage": "https://github.com/johnlindquist/claude-arena#readme",
+	"bugs": {
+		"url": "https://github.com/johnlindquist/claude-arena/issues"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "1.9.4",
+		"@types/bun": "latest",
+		"typescript": "^5",
+		"vitest": "latest"
+	},
+	"engines": {
+		"bun": ">=1.0.0"
+	}
 }

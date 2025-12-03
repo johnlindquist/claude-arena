@@ -1,4 +1,4 @@
-import { tmpDir, timestamp } from "./const";
+import { timestamp, tmpDir } from "./const";
 
 const VARIATION_STRATEGIES = `
 1. **PERSONA** - Role-based identity framing. Make the AI embody a specific expert.
@@ -21,9 +21,9 @@ const VARIATION_STRATEGIES = `
  * Step 1a: Variations-only prompt - when user provides their own task
  */
 export function buildVariationsOnlyPrompt(systemPrompt: string, variations: number): string {
-   const outputDir = `${tmpDir}/${timestamp}`;
+	const outputDir = `${tmpDir}/${timestamp}`;
 
-   return `You are a SYSTEM PROMPT VARIATION DESIGNER.
+	return `You are a SYSTEM PROMPT VARIATION DESIGNER.
 
 Your job is to create ${variations} system prompt variations to test.
 
@@ -38,7 +38,19 @@ You ONLY need to write files to: ${outputDir}
 
 ## The System Prompt to Evaluate
 
-"${systemPrompt}"
+<system-prompt>
+${systemPrompt}
+</system-prompt>
+
+## Task 0: FIRST - Analyze the System Prompt
+
+Before designing variations, carefully read the ENTIRE system prompt and identify the KEY aspects:
+1. **Explicit rules** - Things to ALWAYS or NEVER do
+2. **Tool preferences** - Specific tools to use or avoid
+3. **Workflow requirements** - Required sequences or processes
+4. **Style/approach preferences** - How work should be done
+
+Each variation must preserve ALL these key aspects while expressing them differently.
 
 ## Your Task: Generate ${variations} System Prompt Variations
 
@@ -72,9 +84,9 @@ Begin now - write all variation files.`;
  * Step 1b: Design prompt - generates task.md and variation-*.md files
  */
 export function buildDesignPrompt(systemPrompt: string, variations: number): string {
-   const outputDir = `${tmpDir}/${timestamp}`;
+	const outputDir = `${tmpDir}/${timestamp}`;
 
-   return `You are a SYSTEM PROMPT VARIATION DESIGNER.
+	return `You are a SYSTEM PROMPT VARIATION DESIGNER.
 
 Your job is to create a revealing task and ${variations} system prompt variations to test.
 
@@ -89,29 +101,90 @@ You ONLY need to write files to: ${outputDir}
 
 ## The System Prompt to Evaluate
 
-"${systemPrompt}"
+<system-prompt>
+${systemPrompt}
+</system-prompt>
 
 ## Your Tasks
 
-### Task 1: Design a Revealing Coding Task
+### Task 0: FIRST - Analyze the System Prompt
 
-Create a coding task that would clearly reveal whether every aspect of the system prompt is being followed.
+Before designing anything, carefully read the ENTIRE system prompt above and identify:
+1. **Explicit rules** - Things the AI is told to ALWAYS or NEVER do
+2. **Tool preferences** - Specific tools to use or avoid (e.g., "use beads not TodoWrite", "use gemini_research not WebSearch")
+3. **Workflow requirements** - Required sequences or processes
+4. **Style/approach preferences** - How code should be written or structured
 
-CRITICAL: The system prompt may have multiple aspects, so the task should reveal whether all aspects are being followed, implied or explicit.
+Write these key aspects as a numbered list in your thinking, as you'll need to ensure the task tests ALL of them.
 
-The task should:
-- Be specific enough to generate actual code
-- Be complex enough to expose differences in approach
-- Naturally surface violations of the system prompt
+### Task 1: Design a STRESS TEST Task
 
-Example: If system prompt is "follow TDD", task might be "implement a URL shortener service"
-Example: If system prompt is "avoid code smells", task might be "refactor this legacy function: [provide messy code]"
+Your goal is to create a task that STRESS TESTS every rule in the system prompt. The task should push each rule to its breaking point to see when and how it kicks in.
+
+**STRESS TEST DESIGN PRINCIPLES:**
+
+1. **Every rule gets a scenario** - For EACH rule you identified in Task 0, the task MUST include a specific scenario that triggers that rule. Don't leave any rule untested.
+
+2. **Maximum temptation** - Design scenarios where the EASY/DEFAULT path would violate the rule:
+   - If rule says "use X not Y", create a situation where Y is the obvious first choice
+   - If rule says "always do Z first", create urgency that tempts skipping Z
+   - If rule says "never do W", create a situation where W seems helpful
+
+3. **Visible decision points** - The task should force the AI to make visible choices at each rule. The output should clearly show which path was taken.
+
+4. **Compound pressure** - Layer multiple rules in single scenarios. Example: "Research the topic, track your findings as tasks, then implement" tests research tools + task tracking + implementation approach simultaneously.
+
+5. **Edge cases** - Include ambiguous situations where rules might conflict or where it's unclear if a rule applies.
+
+**TASK STRUCTURE:**
+
+The task should be a realistic coding project that naturally incorporates:
+- A research/information gathering phase (tests research tool preferences)
+- A planning/tracking phase (tests task management preferences)
+- An implementation phase (tests coding style preferences)
+- Multiple decision points where rules MUST kick in to pass
+
+**BAD EXAMPLES:**
+- "Build a todo app" ❌ (generic, doesn't stress specific rules)
+- "Write a function to sort numbers" ❌ (too simple, no decision points)
+
+**GOOD EXAMPLE:**
+"Build a CLI tool that helps users find and compare npm packages. Requirements:
+1. First, research current best practices for CLI argument parsing in Node.js
+2. Track your implementation plan as you work
+3. Implement search functionality that queries the npm registry
+4. Add comparison features
+5. Include tests
+This should be done incrementally with progress tracking."
+
+This example STRESS TESTS: research tool choice, task tracking tool choice, coding patterns, testing approach - all in one realistic task.
+
+**REQUIRED: At the end of the task file, include a "Rules Coverage" section:**
+
+\`\`\`
+## Rules Coverage
+
+This task stress tests the following rules from the system prompt:
+
+| Rule | Scenario in Task | How It's Stressed |
+|------|------------------|-------------------|
+| Use beads not TodoWrite | Planning phase | Task requires tracking work progress |
+| Use gemini_research not WebSearch | Research phase | Must look up current best practices |
+| ... | ... | ... |
+\`\`\`
+
+If any rule from Task 0 is NOT covered, you MUST revise the task to include it.
 
 Write the task to: ${outputDir}/task.md
 
 ### Task 2: Generate ${variations} System Prompt Variations
 
 Create ${variations} different ways to express the system prompt as CLAUDE.md-style instructions.
+
+**IMPORTANT: Keep variations CONCISE** - Each variation should be under 3000 characters.
+Focus on the KEY rules identified in Task 0, not every detail.
+A shorter, focused variation is better than a long, verbose one.
+
 Each variation should use a DIFFERENT STRATEGY:
 ${VARIATION_STRATEGIES}
 
@@ -142,34 +215,45 @@ Begin now - write the task and all variation files.`;
  * Step 3: Evaluation prompt - takes captured outputs and evaluates them
  */
 export function buildEvaluationPrompt(
-   systemPrompt: string,
-   task: string,
-   variations: VariationInfo[],
-   results: VariationResult[],
-   outputDir: string
+	systemPrompt: string,
+	task: string,
+	variations: VariationInfo[],
+	results: VariationResult[],
+	outputDir: string,
 ): string {
-   const variationSummaries = variations
-      .map((v) => `${v.number}. **${v.strategy}**: ${v.summary}`)
-      .join("\n");
+	const variationSummaries = variations
+		.map((v) => `${v.number}. **${v.strategy}**: ${v.summary}`)
+		.join("\n");
 
-   const resultBlocks = results
-      .map((r) => {
-         const varInfo = variations.find(v => v.number === r.variationNumber);
-         return `
+	// Truncate long outputs to avoid context overflow
+	const MAX_OUTPUT_LENGTH = 8000;
+	const truncateOutput = (output: string): string => {
+		if (output.length <= MAX_OUTPUT_LENGTH) return output;
+		const half = Math.floor(MAX_OUTPUT_LENGTH / 2);
+		return `${output.slice(0, half)}\n\n[... ${(output.length - MAX_OUTPUT_LENGTH).toLocaleString()} characters truncated ...]\n\n${output.slice(-half)}`;
+	};
+
+	const resultBlocks = results
+		.map((r) => {
+			const varInfo = variations.find((v) => v.number === r.variationNumber);
+			const outputDisplay = truncateOutput(r.output);
+			const wasTruncated = r.output.length > MAX_OUTPUT_LENGTH;
+			return `
 ### Variation ${r.variationNumber}: ${varInfo?.strategy || "UNKNOWN"}
 
 **Project Path**: \`${outputDir}/run-${r.variationNumber}\`
+${wasTruncated ? `**Note**: Output truncated from ${r.output.length.toLocaleString()} chars for evaluation. Full output in project path.` : ""}
 
 <output>
-${r.output}
+${outputDisplay}
 </output>
 
 Exit code: ${r.exitCode}
 `;
-      })
-      .join("\n");
+		})
+		.join("\n");
 
-   return `You are a SYSTEM PROMPT EFFECTIVENESS EVALUATOR.
+	return `You are a SYSTEM PROMPT EFFECTIVENESS EVALUATOR.
 
 Your job is to evaluate which system prompt variation best achieved the objective.
 
@@ -212,7 +296,7 @@ For each output, score on:
 Scores: Adherence=X, Integration=X, Quality=X, Consistency=X
 Total: X/12
 
-### Variation 1: ${variations.find(v => v.number === 1)?.strategy || "PERSONA"}
+### Variation 1: ${variations.find((v) => v.number === 1)?.strategy || "PERSONA"}
 **Project**: \`${outputDir}/run-1\`
 
 [Code output analysis]
@@ -220,7 +304,7 @@ Scores: Adherence=X, Integration=X, Quality=X, Consistency=X
 Total: X/12
 Improvement over baseline: +/- X points
 
-### Variation 2: ${variations.find(v => v.number === 2)?.strategy || "EXEMPLAR"}
+### Variation 2: ${variations.find((v) => v.number === 2)?.strategy || "EXEMPLAR"}
 **Project**: \`${outputDir}/run-2\`
 
 ...
@@ -258,39 +342,41 @@ Begin your evaluation.`;
  * Get the output directory path
  */
 export function getOutputDir(): string {
-   return `${tmpDir}/${timestamp}`;
+	return `${tmpDir}/${timestamp}`;
 }
 
 /**
  * Build the claude command args for running a variation
  */
-export function buildVariationArgs(
-   taskPath: string,
-   variationPath: string
-): string[] {
-   return [
-      "claude",
-      "--model", "haiku",
-      "--print",
-      `git init && complete this task in full: $(cat ${taskPath}) --- CRITICAL: Once complete, diff all of the changed files back to the user. NEVER SUMMARIZE!`,
-      "--permission-mode", "bypassPermissions",
-      "--append-system-prompt", `$(cat ${variationPath})`,
-      "--setting-sources", "",
-      "--mcp-config", JSON.stringify({ mcpServers: {} }),
-   ];
+export function buildVariationArgs(taskPath: string, variationPath: string): string[] {
+	return [
+		"claude",
+		"--model",
+		"haiku",
+		"--print",
+		`git init && complete this task in full: $(cat ${taskPath}) --- CRITICAL: Once complete, diff all of the changed files back to the user. NEVER SUMMARIZE!`,
+		"--permission-mode",
+		"bypassPermissions",
+		"--append-system-prompt",
+		`$(cat ${variationPath})`,
+		"--setting-sources",
+		"",
+		"--mcp-config",
+		JSON.stringify({ mcpServers: {} }),
+	];
 }
 
 // Types
 export interface VariationInfo {
-   number: number;
-   strategy: string;
-   summary: string;
+	number: number;
+	strategy: string;
+	summary: string;
 }
 
 export interface VariationResult {
-   variationNumber: number;
-   output: string;
-   exitCode: number;
+	variationNumber: number;
+	output: string;
+	exitCode: number;
 }
 
 // Legacy exports for backwards compatibility
