@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/johnlindquist/claude-arena/compare/v1.2.1...v1.3.0) (2025-12-03)
+
+
+### Features
+
+* spawn interactive judge session after evaluation ([96dc466](https://github.com/johnlindquist/claude-arena/commit/96dc4661bccec6f1a488bed4b1cd10b0c69a8a27))
+
 ## [1.2.1](https://github.com/johnlindquist/claude-arena/compare/v1.2.0...v1.2.1) (2025-12-03)
 
 
