@@ -29,6 +29,7 @@ import {
 	processStreamChunk,
 } from "./stream-parser";
 import { parseVariationInfo } from "./variation-parser";
+import { runVariationsWithProgress } from "./variation-progress";
 
 /**
  * Parse stream-json output from Claude CLI.
@@ -747,20 +748,21 @@ Format your response as:
 	console.log(`   ${pc.dim("Variations:")} ${variations} + baseline (variation 0) generated`);
 
 	// ============================================
-	// STEP 2: Run all variations in parallel
+	// STEP 2: Run all variations in parallel with live progress
 	// ============================================
 	console.log("");
 	console.log(pc.bgMagenta(pc.white(pc.bold(" STEP 2: TESTING VARIATIONS "))));
 	console.log(pc.dim("Running all variations in parallel against the generated task"));
 	console.log("");
-	console.log(pc.bgYellow(pc.black(" ⏳ Please be patient - this may take 5-10 minutes... ")));
-	console.log(pc.dim("   Each variation is executing the task in an isolated sandbox."));
-	console.log(pc.dim("   Progress updates will appear below as variations complete."));
-	console.log("");
 
-	const variationPromises: Promise<VariationResult>[] = [];
+	// Pre-load variation files and prepare work directories
+	const variationData: Array<{
+		info: (typeof variationInfo)[0];
+		content: string;
+		workDir: string;
+		settingSources: string;
+	}> = [];
 
-	// Start from 0 (baseline) through variations count
 	for (let i = 0; i <= variations; i++) {
 		const variationPath = join(outputDir, `variation-${i}.md`);
 		const variationFile = Bun.file(variationPath);
@@ -774,74 +776,63 @@ Format your response as:
 		const workDir = join(outputDir, `run-${i}`);
 		await mkdir(workDir, { recursive: true });
 
-		// Baseline (i=0) in user mode: use settingSources="user", no append (Claude CLI loads CLAUDE.md)
-		// Variations (i>0): use settingSources="" (isolated), append variation content
-		// Standard mode: all variations use settingSources="" with their content appended
 		const isBaseline = i === 0;
 		const runSettingSources = isBaseline && userMode ? "user" : "";
 		const runAppendContent = isBaseline && userMode ? "" : variationContent;
-		const label = isBaseline
-			? "BASELINE"
-			: variationInfo.find((v) => v.number === i)?.strategy || `VAR-${i}`;
 
-		console.log(`   ${pc.cyan("◌")} ${pc.dim(`[${i}]`)} ${label} ${pc.dim("starting...")}`);
-
-		variationPromises.push(
-			runVariation({
-				variationNumber: i,
-				task,
-				variationContent: runAppendContent,
+		const info = variationInfo.find((v) => v.number === i);
+		if (info) {
+			variationData.push({
+				info,
+				content: runAppendContent,
 				workDir,
-				testModel,
 				settingSources: runSettingSources,
-			}),
-		);
+			});
+		}
 	}
 
-	// Wait for all variations to complete (don't fail if some error out)
-	const settled = await Promise.allSettled(variationPromises);
+	// Run with Ink progress display
+	const results = await runVariationsWithProgress(
+		variationData.map((v) => v.info),
+		async (variation, onStatus) => {
+			const data = variationData.find((v) => v.info.number === variation.number);
+			if (!data) {
+				return {
+					variationNumber: variation.number,
+					output: "ERROR: Variation data not found",
+					exitCode: 1,
+				};
+			}
 
-	const results: VariationResult[] = [];
+			return runVariation({
+				variationNumber: variation.number,
+				task,
+				variationContent: data.content,
+				workDir: data.workDir,
+				testModel,
+				settingSources: data.settingSources,
+				onStatus,
+			});
+		},
+	);
+
+	// Save output transcripts
 	let successCount = 0;
 	let failCount = 0;
 
-	console.log(`\n${pc.green("✅ Variations complete")}`);
-	for (const [i, outcome] of settled.entries()) {
-		if (outcome.status === "fulfilled") {
-			const result = outcome.value;
-			results.push(result);
-			const status = result.exitCode === 0 ? pc.green("✓") : pc.yellow("⚠");
-			console.log(`   ${status} Variation ${result.variationNumber}: exit ${result.exitCode}`);
-			if (result.exitCode === 0) successCount++;
-
-			// Save variation output transcript
-			const varOutputPath = join(outputDir, `run-${result.variationNumber}`, "output.md");
-			const varInfo = variationInfo.find((v) => v.number === result.variationNumber);
-			await Bun.write(
-				varOutputPath,
-				`# Variation ${result.variationNumber} Output\n\n**Strategy**: ${varInfo?.strategy || "UNKNOWN"}\n**Summary**: ${varInfo?.summary || "N/A"}\n**Exit Code**: ${result.exitCode}\n\n## Full Output\n\n${result.output}`,
-			);
+	for (const result of results) {
+		if (result.exitCode === 0) {
+			successCount++;
 		} else {
-			// Promise rejected - create a failure result
-			const variationNumber = i;
-			const reason = outcome.reason;
-			results.push({
-				variationNumber,
-				output: `ERROR: Variation failed to run\n${reason}`,
-				exitCode: 1,
-			});
-			console.log(
-				`   ${pc.red("✗")} Variation ${variationNumber}: ${pc.red("FAILED")} - ${reason}`,
-			);
 			failCount++;
-
-			// Save error output too
-			const errorOutputPath = join(outputDir, `run-${variationNumber}`, "output.md");
-			await Bun.write(
-				errorOutputPath,
-				`# Variation ${variationNumber} Output\n\n**Status**: FAILED\n**Exit Code**: 1\n\n## Error\n\n${reason}`,
-			);
 		}
+
+		const varOutputPath = join(outputDir, `run-${result.variationNumber}`, "output.md");
+		const varInfo = variationInfo.find((v) => v.number === result.variationNumber);
+		await Bun.write(
+			varOutputPath,
+			`# Variation ${result.variationNumber} Output\n\n**Strategy**: ${varInfo?.strategy || "UNKNOWN"}\n**Summary**: ${varInfo?.summary || "N/A"}\n**Exit Code**: ${result.exitCode}\n\n## Full Output\n\n${result.output}`,
+		);
 	}
 
 	if (results.length === 0) {
@@ -849,8 +840,10 @@ Format your response as:
 		process.exit(1);
 	}
 
+	console.log("");
+	console.log(`${pc.green("✅ Variations complete")}`);
 	console.log(
-		`\n   ${pc.dim("Summary:")} ${pc.green(successCount.toString())} succeeded, ${failCount > 0 ? pc.red(failCount.toString()) : pc.dim(failCount.toString())} failed`,
+		`   ${pc.dim("Summary:")} ${pc.green(successCount.toString())} succeeded, ${failCount > 0 ? pc.red(failCount.toString()) : pc.dim(failCount.toString())} failed`,
 	);
 
 	// ============================================
@@ -978,6 +971,7 @@ interface RunVariationOptions {
 	workDir: string;
 	testModel: string;
 	settingSources: string;
+	onStatus?: (status: string) => void;
 }
 
 /**
@@ -985,7 +979,8 @@ interface RunVariationOptions {
  * Uses stream-json format, captures stdout quietly to avoid interleaved parallel output
  */
 async function runVariation(options: RunVariationOptions): Promise<VariationResult> {
-	const { variationNumber, task, variationContent, workDir, testModel, settingSources } = options;
+	const { variationNumber, task, variationContent, workDir, testModel, settingSources, onStatus } =
+		options;
 
 	try {
 		const settings = {
@@ -1036,9 +1031,11 @@ async function runVariation(options: RunVariationOptions): Promise<VariationResu
 		// Ignore stderr for variations (too noisy)
 		new Response(proc.stderr).text();
 
-		// Parse stream-json quietly (no status callback - just capture output)
-		const output = await parseStreamJsonWithStatus(proc.stdout);
+		// Parse stream-json with status callback for progress updates
+		const output = await parseStreamJsonWithStatus(proc.stdout, onStatus);
 		const exitCode = await proc.exited;
+
+		onStatus?.(exitCode === 0 ? "✓ done" : "✗ failed");
 
 		return {
 			variationNumber,
@@ -1046,6 +1043,7 @@ async function runVariation(options: RunVariationOptions): Promise<VariationResu
 			exitCode,
 		};
 	} catch (error) {
+		onStatus?.("✗ error");
 		return {
 			variationNumber,
 			output: `ERROR: Failed to spawn claude process\n${error}`,
