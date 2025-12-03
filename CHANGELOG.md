@@ -1,3 +1,15 @@
+# [1.5.0](https://github.com/johnlindquist/claude-arena/compare/v1.4.0...v1.5.0) (2025-12-03)
+
+
+### Bug Fixes
+
+* allow MCP inheritance for all variations in --user mode ([9bd36d6](https://github.com/johnlindquist/claude-arena/commit/9bd36d669f1c9f9c157c936e6fa0e4a1294a1190))
+
+
+### Features
+
+* add live progress display for parallel variations using Ink ([27c2c09](https://github.com/johnlindquist/claude-arena/commit/27c2c09aae8a58a3e30edeaf22cec4ee295c90e2))
+
 # [1.4.0](https://github.com/johnlindquist/claude-arena/compare/v1.3.0...v1.4.0) (2025-12-03)
 
 
