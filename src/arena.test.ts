@@ -325,7 +325,7 @@ describe("runArena", () => {
 		expect(writtenFiles.get(join(testOutputDir, "variation-0.md"))).toBe("My system prompt");
 	});
 
-	it("should handle userMode correctly for baseline", async () => {
+	it("should handle userMode correctly - ALL variations inherit MCP config", async () => {
 		const config: ArenaConfig = {
 			systemPrompt: "User config content",
 			model: "opus",
@@ -340,11 +340,35 @@ describe("runArena", () => {
 		// Baseline in user mode should use settingSources="user"
 		const baselineCall = runVariationCalls.find((c) => c.variationNumber === 0);
 		expect(baselineCall?.settingSources).toBe("user");
-		expect(baselineCall?.variationContent).toBe(""); // Empty in user mode
+		expect(baselineCall?.variationContent).toBe(""); // Empty - uses CLI's CLAUDE.md
 
-		// Other variations should be isolated
+		// ALL variations in user mode should ALSO use settingSources="user"
+		// This allows them to inherit MCP config from the user's setup
 		const var1Call = runVariationCalls.find((c) => c.variationNumber === 1);
-		expect(var1Call?.settingSources).toBe("");
+		expect(var1Call?.settingSources).toBe("user");
+		expect(var1Call?.variationContent).toBe("You are an expert TDD practitioner..."); // Appended
+
+		const var2Call = runVariationCalls.find((c) => c.variationNumber === 2);
+		expect(var2Call?.settingSources).toBe("user");
+		expect(var2Call?.variationContent).toBe("Example: ❌ BAD: code first ✅ GOOD: test first");
+	});
+
+	it("should isolate variations in non-user mode (no MCP inheritance)", async () => {
+		const config: ArenaConfig = {
+			systemPrompt: "Test prompt",
+			model: "opus",
+			testModel: "haiku",
+			variations: 2,
+			outputDir: testOutputDir,
+			userMode: false,
+		};
+
+		await runArena(config, mockDeps);
+
+		// In non-user mode, ALL variations (including baseline) should be isolated
+		for (const call of runVariationCalls) {
+			expect(call.settingSources).toBe("");
+		}
 	});
 
 	it("should write effective prompt to output directory", async () => {

@@ -777,7 +777,9 @@ Format your response as:
 		await mkdir(workDir, { recursive: true });
 
 		const isBaseline = i === 0;
-		const runSettingSources = isBaseline && userMode ? "user" : "";
+		// In user mode, ALL variations use settingSources="user" to inherit MCP config
+		// Only the baseline gets empty content (uses CLI's CLAUDE.md); variations get their content appended
+		const runSettingSources = userMode ? "user" : "";
 		const runAppendContent = isBaseline && userMode ? "" : variationContent;
 
 		const info = variationInfo.find((v) => v.number === i);
