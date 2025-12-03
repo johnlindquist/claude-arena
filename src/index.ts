@@ -944,16 +944,31 @@ ${variationInfo.map((v) => `- [run-${v.number}/](./run-${v.number}/) - ${v.strat
 	console.log("");
 	console.log(pc.bgGreen(pc.white(pc.bold(" ✅ COMPLETE "))));
 	console.log(`📋 ${pc.dim("Session summary:")} ${summaryPath}`);
-
-	console.log(`\n${pc.dim("━".repeat(60))}`);
-	console.log(pc.dim("Want to refine the results or apply the optimized prompt?"));
-	console.log(`Continue the judge session: ${pc.cyan(`claude --resume ${judgeSessionId}`)}`);
-	console.log(pc.dim("━".repeat(60)));
 	console.log("");
 	console.log(`📂 ${pc.bold("All output saved to:")}`);
 	console.log(`   ${pc.cyan(outputDir)}`);
+	console.log("");
 
-	process.exit(evalResult.exitCode);
+	// Spawn interactive judge session to apply suggestions
+	console.log(pc.dim("━".repeat(60)));
+	console.log(pc.bold("Resuming judge session interactively..."));
+	console.log(pc.dim("━".repeat(60)));
+	console.log("");
+
+	// Build the follow-up message based on mode
+	const followUpMessage = userMode
+		? "Would you like me to apply these suggestions to ~/.claude/CLAUDE.md? I can show you a diff first, make a backup, and apply the changes."
+		: "What would you like me to do with these suggestions? I can help you apply them to your system prompt, explain the reasoning further, or make adjustments.";
+
+	const interactiveArgs = ["claude", "--resume", judgeSessionId, "--model", model, followUpMessage];
+
+	// Spawn interactive session (no --print, inherits stdio)
+	const interactiveProc = Bun.spawn(interactiveArgs, {
+		stdio: ["inherit", "inherit", "inherit"],
+	});
+
+	const interactiveExitCode = await interactiveProc.exited;
+	process.exit(interactiveExitCode);
 }
 
 interface RunVariationOptions {
