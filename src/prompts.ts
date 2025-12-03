@@ -1,5 +1,10 @@
 import { tmpDir, timestamp } from "./const";
 
+const mcpConfig = {
+   "mcpServers": {}
+}
+
+
 export function buildJudgePrompt(systemPrompt: string, variations: number): string {
    return `You are a SYSTEM PROMPT EFFECTIVENESS EVALUATOR.
 
@@ -77,6 +82,8 @@ claude --model haiku \\
    --print "git init then complete this task in full: $(cat ${tmpDir}/${timestamp}/task.md) --- CRITICAL: Once complete, diff all of the changed files back to the user. NEVER SUMMARIZE!" \\
    --permission-mode "bypassPermissions" \\
    --append-system-prompt "$(cat ${tmpDir}/${timestamp}/variation-1.md)" \\
+   --setting-sources "" \\
+   --mcp-config "${JSON.stringify(mcpConfig)}" \\
    --settings ./test-sandbox-settings.json \\   
 \`\`\`
 
