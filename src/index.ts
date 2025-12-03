@@ -11,6 +11,250 @@ import {
   type VariationResult,
 } from "./prompts";
 
+/**
+ * Parse stream-json output from Claude CLI.
+ * Format: {"type":"assistant","message":{"content":[...]}} per line
+ */
+async function parseStreamJson(
+  stream: ReadableStream,
+  destination: NodeJS.WriteStream
+): Promise<string> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let fullContent = "";
+  let buffer = "";
+  const seenToolIds = new Set<string>();
+  const seenTextIds = new Set<string>();
+  let shownModel = false;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Process complete JSON lines
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+
+        try {
+          const event = JSON.parse(line);
+
+          // Show system init info (model, tools available)
+          if (event.type === "system" && event.subtype === "init") {
+            const model = event.model || "unknown";
+            const toolCount = event.tools?.length || 0;
+            destination.write(`   🤖 Model: ${model} (${toolCount} tools)\n`);
+          }
+
+          // Handle assistant messages
+          if (event.type === "assistant" && event.message?.content) {
+            const msgId = event.message?.id || event.uuid || "";
+
+            // Show model on first assistant message if not shown yet
+            if (!shownModel && event.message?.model) {
+              shownModel = true;
+            }
+
+            for (let i = 0; i < event.message.content.length; i++) {
+              const block = event.message.content[i];
+
+              // Show text content (dedupe by message ID + block index)
+              if (block.type === "text" && block.text) {
+                const textKey = `${msgId}-text-${i}`;
+                if (!seenTextIds.has(textKey)) {
+                  seenTextIds.add(textKey);
+                  fullContent += block.text;
+                  destination.write(block.text);
+                }
+              }
+
+              // Show tool activity (dedupe by tool ID)
+              if (block.type === "tool_use" && block.id && !seenToolIds.has(block.id)) {
+                seenToolIds.add(block.id);
+                const toolName = block.name || "Tool";
+                const filePath = block.input?.file_path || block.input?.path || "";
+                const fileName = filePath.split("/").pop() || "";
+                if (fileName) {
+                  destination.write(`   📝 ${toolName}: ${fileName}\n`);
+                } else {
+                  destination.write(`   🔧 ${toolName}\n`);
+                }
+              }
+            }
+
+            // Show when message completes with stop reason
+            if (event.message?.stop_reason === "end_turn") {
+              const usage = event.message?.usage;
+              if (usage) {
+                const input = usage.input_tokens || 0;
+                const output = usage.output_tokens || 0;
+                const cached = usage.cache_read_input_tokens || 0;
+                destination.write(`\n   📊 Tokens: ${input} in (${cached} cached) → ${output} out\n`);
+              }
+            }
+          }
+
+          // Handle user messages with tool results
+          if (event.type === "user" && event.toolUseResult) {
+            const result = event.toolUseResult;
+            if (result.filePath) {
+              const fileName = result.filePath.split("/").pop() || "";
+              destination.write(`   ✅ Created: ${fileName}\n`);
+            }
+          }
+        } catch {
+          // Not valid JSON, skip
+        }
+      }
+    }
+
+    // Process remaining buffer
+    if (buffer.trim()) {
+      try {
+        const event = JSON.parse(buffer);
+        if (event.type === "assistant" && event.message?.content) {
+          for (const block of event.message.content) {
+            if (block.type === "text" && block.text) {
+              fullContent += block.text;
+              destination.write(block.text);
+            }
+          }
+        }
+      } catch {
+        // Not valid JSON
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return fullContent;
+}
+
+/**
+ * Simple tee helper - reads a stream, writes to destination, captures content.
+ * Used for stderr or non-stream-json output.
+ */
+async function teeStream(
+  stream: ReadableStream,
+  destination: NodeJS.WriteStream
+): Promise<string> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let fullContent = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      fullContent += chunk;
+      destination.write(chunk);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return fullContent;
+}
+
+/**
+ * Parse stream-json output with status callback for progress display.
+ * Reports tool names and text snippets via callback.
+ */
+async function parseStreamJsonWithStatus(
+  stream: ReadableStream,
+  onStatus?: (status: string) => void
+): Promise<string> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let fullContent = "";
+  let buffer = "";
+  const seenTextIds = new Set<string>();
+  const seenToolIds = new Set<string>();
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Process complete JSON lines
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+
+        try {
+          const event = JSON.parse(line);
+
+          // Handle assistant messages
+          if (event.type === "assistant" && event.message?.content) {
+            const msgId = event.message?.id || event.uuid || "";
+
+            for (let i = 0; i < event.message.content.length; i++) {
+              const block = event.message.content[i];
+
+              // Capture text content
+              if (block.type === "text" && block.text) {
+                const textKey = `${msgId}-text-${i}`;
+                if (!seenTextIds.has(textKey)) {
+                  seenTextIds.add(textKey);
+                  fullContent += block.text;
+                  // Report first 20 chars of text as status
+                  const preview = block.text.slice(0, 20).replace(/\n/g, " ").trim();
+                  if (preview) {
+                    onStatus?.(preview + (block.text.length > 20 ? "…" : ""));
+                  }
+                }
+              }
+
+              // Report tool usage
+              if (block.type === "tool_use" && block.id && !seenToolIds.has(block.id)) {
+                seenToolIds.add(block.id);
+                const toolName = block.name || "Tool";
+                const filePath = block.input?.file_path || block.input?.path || block.input?.command || "";
+                const shortPath = filePath.split("/").pop()?.slice(0, 15) || "";
+                onStatus?.(shortPath ? `${toolName}:${shortPath}` : toolName);
+              }
+            }
+          }
+        } catch {
+          // Not valid JSON, skip
+        }
+      }
+    }
+
+    // Process remaining buffer
+    if (buffer.trim()) {
+      try {
+        const event = JSON.parse(buffer);
+        if (event.type === "assistant" && event.message?.content) {
+          for (const block of event.message.content) {
+            if (block.type === "text" && block.text) {
+              fullContent += block.text;
+            }
+          }
+        }
+      } catch {
+        // Not valid JSON
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return fullContent;
+}
+
 async function main() {
   const { flags, positional } = parseArgs(process.argv.slice(2));
 
@@ -135,6 +379,18 @@ Examples:
 
   const variationPromises: Promise<VariationResult>[] = [];
 
+  // Track latest status for each variation
+  const variationStatus: Map<number, string> = new Map();
+
+  const updateStatus = () => {
+    // Clear line and print all statuses
+    const statusLine = Array.from(variationStatus.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([num, status]) => `[${num}] ${status}`)
+      .join("  ");
+    process.stdout.write(`\r   ${statusLine}${"".padEnd(20)}`);
+  };
+
   for (let i = 1; i <= variations; i++) {
     const variationPath = join(outputDir, `variation-${i}.md`);
     const variationFile = Bun.file(variationPath);
@@ -148,12 +404,19 @@ Examples:
     const workDir = join(outputDir, `run-${i}`);
     await mkdir(workDir, { recursive: true });
 
-    console.log(`   Starting variation ${i}...`);
+    variationStatus.set(i, "starting...");
 
     variationPromises.push(
-      runVariation(i, task, variationContent, workDir)
+      runVariation(i, task, variationContent, workDir, (status) => {
+        variationStatus.set(i, status);
+        updateStatus();
+      })
     );
   }
+
+  // Show initial status
+  updateStatus();
+  console.log(); // newline after status
 
   // Wait for all variations to complete (don't fail if some error out)
   const settled = await Promise.allSettled(variationPromises);
@@ -215,12 +478,14 @@ Examples:
 
 /**
  * Run a single variation test
+ * Uses stream-json format, captures stdout quietly to avoid interleaved parallel output
  */
 async function runVariation(
   variationNumber: number,
   task: string,
   variationContent: string,
-  workDir: string
+  workDir: string,
+  onStatus?: (status: string) => void
 ): Promise<VariationResult> {
   try {
     const mcpConfig = { mcpServers: {} };
@@ -234,12 +499,12 @@ async function runVariation(
       }
     }
 
-
     const proc = Bun.spawn(
       [
         "claude",
         "--model", "haiku",
         "--print",
+        "--output-format", "stream-json",
         "--verbose",
         `git init && complete this task in full:\n\n${task}\n\n--- CRITICAL: Once complete, diff all of the changed files. NEVER SUMMARIZE!`,
         "--permission-mode", "bypassPermissions",
@@ -255,16 +520,22 @@ async function runVariation(
       }
     );
 
-    const output = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
+    // Ignore stderr for variations (too noisy)
+    new Response(proc.stderr).text();
+
+    // Parse stream-json quietly with status callback
+    const output = await parseStreamJsonWithStatus(proc.stdout, onStatus);
     const exitCode = await proc.exited;
+
+    onStatus?.("✓ done");
 
     return {
       variationNumber,
-      output: output + (stderr ? `\n\nSTDERR:\n${stderr}` : ""),
+      output,
       exitCode,
     };
   } catch (error) {
+    onStatus?.("✗ error");
     return {
       variationNumber,
       output: `ERROR: Failed to spawn claude process\n${error}`,
@@ -275,6 +546,7 @@ async function runVariation(
 
 /**
  * Run claude with given parameters
+ * Uses stream-json format for real-time output while capturing content
  */
 async function runClaude(options: {
   model: string;
@@ -308,6 +580,7 @@ exit 0
   const args = [
     "claude",
     "--print",
+    "--output-format", "stream-json",
     "--verbose",
     "--model", options.model,
     "--setting-sources", "",
@@ -318,23 +591,24 @@ exit 0
     options.userMessage,
   ];
 
-  if (options.streamOutput) {
-    // Stream to console
-    const proc = Bun.spawn(args, {
-      stdio: ["inherit", "inherit", "inherit"],
-    });
-    const exitCode = await proc.exited;
-    return { output: "", exitCode };
-  } else {
-    // Capture output
-    const proc = Bun.spawn(args, {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const output = await new Response(proc.stdout).text();
-    const exitCode = await proc.exited;
-    return { output, exitCode };
-  }
+  const proc = Bun.spawn(args, {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  // Parse the stream-json output - extracts text and prints to console
+  const stdoutPromise = parseStreamJson(proc.stdout, process.stdout);
+  // Tee stderr to console (for error messages)
+  const stderrPromise = teeStream(proc.stderr, process.stderr);
+
+  // Wait for process to finish
+  const exitCode = await proc.exited;
+
+  // Wait for streams to finish flushing
+  const [output] = await Promise.all([stdoutPromise, stderrPromise]);
+
+  // Return the extracted text content
+  return { output, exitCode };
 }
 
 /**
