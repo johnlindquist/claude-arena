@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/johnlindquist/claude-arena/compare/v1.0.0...v1.1.0) (2025-12-03)
+
+
+### Features
+
+* add --version/-v flag to show package version ([9bbb1ea](https://github.com/johnlindquist/claude-arena/commit/9bbb1ea91b0be795fc0531764964c333ae7f3cc8))
+
 # 1.0.0 (2025-12-03)
 
 
