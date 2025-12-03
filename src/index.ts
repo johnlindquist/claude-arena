@@ -676,6 +676,13 @@ Format your response as:
 		}
 
 		variationInfo = parseVariationInfo(designResult.output, variations);
+
+		// Save design phase conversation
+		const designConversationPath = join(outputDir, "design-conversation.md");
+		await Bun.write(
+			designConversationPath,
+			`# Design Phase Conversation\n\n**Date**: ${new Date().toISOString()}\n**Mode**: User-provided task (variations only)\n\n## Output\n\n${designResult.output}`,
+		);
 	} else {
 		// AI generates both task and variations
 		console.log("");
@@ -703,6 +710,13 @@ Format your response as:
 		}
 
 		variationInfo = parseVariationInfo(designResult.output, variations);
+
+		// Save design phase conversation
+		const designConversationPath = join(outputDir, "design-conversation.md");
+		await Bun.write(
+			designConversationPath,
+			`# Design Phase Conversation\n\n**Date**: ${new Date().toISOString()}\n**Mode**: AI-generated task and variations\n\n## Output\n\n${designResult.output}`,
+		);
 
 		// Read the generated task
 		const taskFile = Bun.file(taskPath);
@@ -830,9 +844,17 @@ Format your response as:
 			const status = result.exitCode === 0 ? pc.green("✓") : pc.yellow("⚠");
 			console.log(`   ${status} Variation ${result.variationNumber}: exit ${result.exitCode}`);
 			if (result.exitCode === 0) successCount++;
+
+			// Save variation output transcript
+			const varOutputPath = join(outputDir, `run-${result.variationNumber}`, "output.md");
+			const varInfo = variationInfo.find((v) => v.number === result.variationNumber);
+			await Bun.write(
+				varOutputPath,
+				`# Variation ${result.variationNumber} Output\n\n**Strategy**: ${varInfo?.strategy || "UNKNOWN"}\n**Summary**: ${varInfo?.summary || "N/A"}\n**Exit Code**: ${result.exitCode}\n\n## Full Output\n\n${result.output}`,
+			);
 		} else {
 			// Promise rejected - create a failure result
-			const variationNumber = i + 1;
+			const variationNumber = i;
 			const reason = outcome.reason;
 			results.push({
 				variationNumber,
@@ -843,6 +865,13 @@ Format your response as:
 				`   ${pc.red("✗")} Variation ${variationNumber}: ${pc.red("FAILED")} - ${reason}`,
 			);
 			failCount++;
+
+			// Save error output too
+			const errorOutputPath = join(outputDir, `run-${variationNumber}`, "output.md");
+			await Bun.write(
+				errorOutputPath,
+				`# Variation ${variationNumber} Output\n\n**Status**: FAILED\n**Exit Code**: 1\n\n## Error\n\n${reason}`,
+			);
 		}
 	}
 
@@ -891,6 +920,13 @@ Format your response as:
 		streamOutput: true,
 	});
 
+	// Save evaluation conversation
+	const evalConversationPath = join(outputDir, "evaluation-conversation.md");
+	await Bun.write(
+		evalConversationPath,
+		`# Evaluation Phase Conversation\n\n**Date**: ${new Date().toISOString()}\n**Judge Model**: ${model}\n\n## Full Evaluation Output\n\n${evalResult.output}`,
+	);
+
 	// Write session summary
 	const summaryPath = join(outputDir, "session-summary.md");
 	const summary = `# Claude Arena Session Summary
@@ -925,6 +961,16 @@ ${variationInfo
 ## Output Directories
 
 ${variationInfo.map((v) => `- [run-${v.number}/](./run-${v.number}/) - ${v.strategy}`).join("\n")}
+
+## All Generated Files
+
+- **effective-prompt.md** - The system prompt being tested (with imports resolved)
+- **task.md** - The generated stress-test task
+- **design-conversation.md** - Full conversation from design phase
+- **evaluation-conversation.md** - Full conversation from evaluation phase
+- **variation-0.md** through **variation-${variations}.md** - All variation prompts
+- **run-{0-${variations}}/output.md** - Full output transcript for each variation
+- **session-summary.md** - This summary file
 `;
 
 	await Bun.write(summaryPath, summary);
@@ -1069,6 +1115,9 @@ Output ONLY the merged CLAUDE.md content, no explanations:
 	console.log(pc.dim("Want to refine the results or apply the optimized prompt?"));
 	console.log(`Continue interactively with: ${pc.cyan("claude --resume")}`);
 	console.log(pc.dim("━".repeat(60)));
+	console.log("");
+	console.log(`📂 ${pc.bold("Feel free to review all the output in this directory:")}`);
+	console.log(`   ${pc.cyan(outputDir)}`);
 
 	process.exit(evalResult.exitCode);
 }

@@ -107,21 +107,28 @@ bun run src/index.ts "your prompt"
 
 ## Output
 
-Each run creates a timestamped directory in your system's temp folder:
+Each run creates a timestamped directory in your system's temp folder with a complete paper trail:
 
 ```
 /tmp/claude-arena-2024-01-15T10-30/
-├── task.md           # The generated coding task
-├── variation-1.md    # PERSONA variation
-├── variation-2.md    # EXEMPLAR variation
-├── variation-3.md    # CONSTRAINT variation
-├── variation-4.md    # SOCRATIC variation
-├── variation-5.md    # CHECKLIST variation
-├── run-1/            # Haiku's output for variation 1
-├── run-2/            # Haiku's output for variation 2
-├── run-3/            # ...
-├── run-4/
-└── run-5/
+├── session-summary.md          # Overview with links to all files
+├── effective-prompt.md         # The resolved system prompt being tested
+├── task.md                     # The generated stress-test task
+├── design-conversation.md      # Full design phase conversation
+├── evaluation-conversation.md  # Full evaluation phase conversation
+├── variation-0.md              # BASELINE (original prompt)
+├── variation-1.md              # PERSONA variation
+├── variation-2.md              # EXEMPLAR variation
+├── variation-3.md              # CONSTRAINT variation
+├── variation-4.md              # SOCRATIC variation
+├── variation-5.md              # CHECKLIST variation
+├── run-0/                      # Baseline output
+│   └── output.md               # Full output transcript
+├── run-1/                      # Variation 1 output
+│   └── output.md
+├── run-2/
+│   └── output.md
+└── ...
 ```
 
 The final evaluation includes:
