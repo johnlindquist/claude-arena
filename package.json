@@ -6,9 +6,7 @@
 	"bin": {
 		"claude-arena": "./src/index.ts"
 	},
-	"files": [
-		"src"
-	],
+	"files": ["src"],
 	"scripts": {
 		"start": "bun run src/index.ts",
 		"test": "vitest",
