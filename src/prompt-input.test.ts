@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Note: These tests are limited because we can't easily mock readline in Bun/Vitest
 // The functions are simple enough that manual testing is sufficient

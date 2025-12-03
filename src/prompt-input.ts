@@ -24,10 +24,7 @@ export async function prompt(question: string): Promise<string> {
  * Prompt the user to select from numbered options
  * Returns the selected option index (0-based) or -1 if invalid
  */
-export async function selectOption(
-	question: string,
-	options: string[],
-): Promise<number> {
+export async function selectOption(question: string, options: string[]): Promise<number> {
 	console.log(question);
 	console.log("");
 	options.forEach((opt, i) => {
@@ -36,9 +33,9 @@ export async function selectOption(
 	console.log("");
 
 	const answer = await prompt("Enter selection (number): ");
-	const selection = parseInt(answer, 10);
+	const selection = Number.parseInt(answer, 10);
 
-	if (isNaN(selection) || selection < 1 || selection > options.length) {
+	if (Number.isNaN(selection) || selection < 1 || selection > options.length) {
 		return -1;
 	}
 
