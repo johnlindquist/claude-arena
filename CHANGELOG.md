@@ -1,3 +1,16 @@
+# [1.2.0](https://github.com/johnlindquist/claude-arena/compare/v1.1.0...v1.2.0) (2025-12-03)
+
+
+### Bug Fixes
+
+* format package.json for CI ([134d187](https://github.com/johnlindquist/claude-arena/commit/134d1873c4b141dee77874f552cf04f8f0c52494))
+
+
+### Features
+
+* capture full paper trail and add CLAUDE.md ([92859a6](https://github.com/johnlindquist/claude-arena/commit/92859a64a9939def4f74a9e30804bc0343a20233))
+* display parallel variations on separate lines ([7f7b8c1](https://github.com/johnlindquist/claude-arena/commit/7f7b8c17b95b46dab794e64ab4aab2e07473e960))
+
 # [1.1.0](https://github.com/johnlindquist/claude-arena/compare/v1.0.0...v1.1.0) (2025-12-03)
 
 
