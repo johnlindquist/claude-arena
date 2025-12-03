@@ -567,11 +567,12 @@ Format your response as:
 	if (userTask) {
 		// User provided a task - just generate variations
 		console.log("");
-		console.log(pc.bold(pc.magenta("━━━ Step 1: Design Phase ━━━")));
+		console.log(pc.bgMagenta(pc.white(pc.bold(" STEP 1: DESIGN PHASE "))));
 		console.log(pc.dim("Generating variations for user-provided task"));
 		console.log("");
-		console.log(pc.yellow("⏳ Please be patient - this may take 3-5 minutes..."));
+		console.log(pc.bgYellow(pc.black(" ⏳ Please be patient - this may take 3-5 minutes... ")));
 		console.log(pc.dim("   The judge is analyzing your prompt and creating strategic variations."));
+		console.log(pc.dim("─".repeat(60)));
 		console.log("");
 
 		task = userTask;
@@ -595,12 +596,13 @@ Format your response as:
 	} else {
 		// AI generates both task and variations
 		console.log("");
-		console.log(pc.bold(pc.magenta("━━━ Step 1: Design Phase ━━━")));
+		console.log(pc.bgMagenta(pc.white(pc.bold(" STEP 1: DESIGN PHASE "))));
 		console.log(pc.dim("Designing task and variations to stress-test your prompt"));
 		console.log("");
-		console.log(pc.yellow("⏳ Please be patient - this may take 3-5 minutes..."));
+		console.log(pc.bgYellow(pc.black(" ⏳ Please be patient - this may take 3-5 minutes... ")));
 		console.log(pc.dim("   The judge is analyzing your prompt, designing a revealing task,"));
 		console.log(pc.dim("   and creating strategic variations to test different approaches."));
+		console.log(pc.dim("─".repeat(60)));
 		console.log("");
 
 		const designPrompt = buildDesignPrompt(systemPrompt, variations);
@@ -646,10 +648,10 @@ Format your response as:
 	// STEP 2: Run all variations in parallel
 	// ============================================
 	console.log("");
-	console.log(pc.bold(pc.magenta("━━━ Step 2: Testing Variations ━━━")));
+	console.log(pc.bgMagenta(pc.white(pc.bold(" STEP 2: TESTING VARIATIONS "))));
 	console.log(pc.dim("Running all variations in parallel against the generated task"));
 	console.log("");
-	console.log(pc.yellow("⏳ Please be patient - this may take 5-10 minutes..."));
+	console.log(pc.bgYellow(pc.black(" ⏳ Please be patient - this may take 5-10 minutes... ")));
 	console.log(pc.dim("   Each variation is executing the task in an isolated sandbox."));
 	console.log(pc.dim("   Progress updates will appear below as variations complete."));
 	console.log("");
@@ -773,11 +775,12 @@ Format your response as:
 	// STEP 3: Evaluate results
 	// ============================================
 	console.log("");
-	console.log(pc.bold(pc.magenta("━━━ Step 3: Evaluation ━━━")));
+	console.log(pc.bgMagenta(pc.white(pc.bold(" STEP 3: EVALUATION "))));
 	console.log(pc.dim("Analyzing all outputs to determine which variation performed best"));
 	console.log("");
-	console.log(pc.yellow("⏳ Please be patient - this may take 2-3 minutes..."));
+	console.log(pc.bgYellow(pc.black(" ⏳ Please be patient - this may take 2-3 minutes... ")));
 	console.log(pc.dim("   The judge is comparing outputs against your original intent."));
+	console.log(pc.dim("─".repeat(60)));
 	console.log("");
 
 	const evaluationPrompt = buildEvaluationPrompt(
@@ -833,7 +836,7 @@ ${variationInfo.map((v) => `- [run-${v.number}/](./run-${v.number}/) - ${v.strat
 
 	await Bun.write(summaryPath, summary);
 	console.log("");
-	console.log(pc.bold(pc.green("━━━ Complete ━━━")));
+	console.log(pc.bgGreen(pc.white(pc.bold(" ✅ COMPLETE "))));
 	console.log(`📋 ${pc.dim("Session summary:")} ${summaryPath}`);
 
 	// In user mode, offer to apply the optimized prompt to CLAUDE.md
