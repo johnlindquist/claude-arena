@@ -78,9 +78,8 @@ async function parseStreamJson(
                 seenToolIds.add(block.id);
                 const toolName = block.name || "Tool";
                 const filePath = block.input?.file_path || block.input?.path || "";
-                const fileName = filePath.split("/").pop() || "";
-                if (fileName) {
-                  destination.write(`   📝 ${toolName}: ${fileName}\n`);
+                if (filePath) {
+                  destination.write(`   📝 ${toolName}: ${filePath}\n`);
                 } else {
                   destination.write(`   🔧 ${toolName}\n`);
                 }
@@ -103,8 +102,7 @@ async function parseStreamJson(
           if (event.type === "user" && event.toolUseResult) {
             const result = event.toolUseResult;
             if (result.filePath) {
-              const fileName = result.filePath.split("/").pop() || "";
-              destination.write(`   ✅ Created: ${fileName}\n`);
+              destination.write(`   ✅ Created: ${result.filePath}\n`);
             }
           }
         } catch {
@@ -463,7 +461,8 @@ Examples:
     systemPrompt,
     task,
     variationInfo,
-    results
+    results,
+    outputDir
   );
 
   const evalResult = await runClaude({

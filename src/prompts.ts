@@ -94,7 +94,8 @@ export function buildEvaluationPrompt(
    systemPrompt: string,
    task: string,
    variations: VariationInfo[],
-   results: VariationResult[]
+   results: VariationResult[],
+   outputDir: string
 ): string {
    const variationSummaries = variations
       .map((v, i) => `${i + 1}. **${v.strategy}**: ${v.summary}`)
@@ -103,6 +104,8 @@ export function buildEvaluationPrompt(
    const resultBlocks = results
       .map((r, i) => `
 ### Variation ${i + 1}: ${variations[i]?.strategy || "UNKNOWN"}
+
+**Project Path**: \`${outputDir}/run-${i + 1}\`
 
 <output>
 ${r.output}
@@ -149,11 +152,15 @@ For each output, score on:
 ## Results
 
 ### Variation 1: ${variations[0]?.strategy || "PERSONA"}
+**Project**: \`${outputDir}/run-1\`
+
 [Code output analysis]
 Scores: Adherence=X, Integration=X, Quality=X, Consistency=X
 Total: X/12
 
 ### Variation 2: ${variations[1]?.strategy || "EXEMPLAR"}
+**Project**: \`${outputDir}/run-2\`
+
 ...
 (continue for all variations)
 
