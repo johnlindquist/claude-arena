@@ -297,6 +297,13 @@ async function parseStreamJsonWithStatus(
 async function main() {
 	const { flags, positional } = parseArgs(process.argv.slice(2));
 
+	// Handle --version
+	if (flags.version || flags.v) {
+		const packageJson = await import("../package.json");
+		console.log(`claude-arena v${packageJson.version}`);
+		process.exit(0);
+	}
+
 	// Handle --help
 	if (flags.help || flags.h) {
 		console.log(`
@@ -322,7 +329,8 @@ Options:
                           If combined with a prompt, appends to your config
   --task <task>           Provide a specific task instead of AI-generated one
   --debug                 Write resolved system prompt to output dir for inspection
-  --help                  Show this help
+  --help, -h              Show this help
+  --version, -v           Show version number
 
 Examples:
   claude-arena "code should follow Python's Zen principles"
