@@ -10,6 +10,19 @@ import {
   type VariationInfo,
   type VariationResult,
 } from "./prompts";
+import { parseArgs, looksLikePath } from "./args-parser";
+import { parseVariationInfo } from "./variation-parser";
+import {
+  parseStreamLine,
+  accumulateTextFromEvent,
+  extractToolUses,
+  extractUsageStats,
+  formatToolUse,
+  formatUsageStats,
+  createStreamParserState,
+  processStreamChunk,
+  type StreamParserState,
+} from "./stream-parser";
 
 /**
  * Parse stream-json output from Claude CLI.
@@ -21,10 +34,8 @@ async function parseStreamJson(
 ): Promise<string> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
-  let fullContent = "";
-  let buffer = "";
+  const state = createStreamParserState();
   const seenToolIds = new Set<string>();
-  const seenTextIds = new Set<string>();
   let shownModel = false;
 
   try {
@@ -32,106 +43,71 @@ async function parseStreamJson(
       const { done, value } = await reader.read();
       if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
-
-      // Process complete JSON lines
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = processStreamChunk(state, chunk);
 
       for (const line of lines) {
-        if (!line.trim()) continue;
+        const event = parseStreamLine(line);
+        if (!event) continue;
 
-        try {
-          const event = JSON.parse(line);
+        // Show system init info (model, tools available)
+        if (event.type === "system" && event.subtype === "init") {
+          const model = event.model || "unknown";
+          const toolCount = event.tools?.length || 0;
+          destination.write(`   🤖 Model: ${model} (${toolCount} tools)\n`);
+        }
 
-          // Show system init info (model, tools available)
-          if (event.type === "system" && event.subtype === "init") {
-            const model = event.model || "unknown";
-            const toolCount = event.tools?.length || 0;
-            destination.write(`   🤖 Model: ${model} (${toolCount} tools)\n`);
+        // Handle assistant messages
+        if (event.type === "assistant" && event.message?.content) {
+          // Show model on first assistant message if not shown yet
+          if (!shownModel && event.message?.model) {
+            shownModel = true;
           }
 
-          // Handle assistant messages
-          if (event.type === "assistant" && event.message?.content) {
-            const msgId = event.message?.id || event.uuid || "";
+          // Accumulate text content
+          const newText = accumulateTextFromEvent(state, event);
+          if (newText) {
+            destination.write(newText);
+          }
 
-            // Show model on first assistant message if not shown yet
-            if (!shownModel && event.message?.model) {
-              shownModel = true;
-            }
-
-            for (let i = 0; i < event.message.content.length; i++) {
-              const block = event.message.content[i];
-
-              // Show text content (dedupe by message ID + block index)
-              if (block.type === "text" && block.text) {
-                const textKey = `${msgId}-text-${i}`;
-                if (!seenTextIds.has(textKey)) {
-                  seenTextIds.add(textKey);
-                  fullContent += block.text;
-                  destination.write(block.text);
-                }
-              }
-
-              // Show tool activity (dedupe by tool ID)
-              if (block.type === "tool_use" && block.id && !seenToolIds.has(block.id)) {
-                seenToolIds.add(block.id);
-                const toolName = block.name || "Tool";
-                const filePath = block.input?.file_path || block.input?.path || "";
-                if (filePath) {
-                  destination.write(`   📝 ${toolName}: ${filePath}\n`);
-                } else {
-                  destination.write(`   🔧 ${toolName}\n`);
-                }
-              }
-            }
-
-            // Show when message completes with stop reason
-            if (event.message?.stop_reason === "end_turn") {
-              const usage = event.message?.usage;
-              if (usage) {
-                const input = usage.input_tokens || 0;
-                const output = usage.output_tokens || 0;
-                const cached = usage.cache_read_input_tokens || 0;
-                destination.write(`\n   📊 Tokens: ${input} in (${cached} cached) → ${output} out\n`);
-              }
+          // Show tool activity
+          const toolUses = extractToolUses(event);
+          for (const tool of toolUses) {
+            if (!seenToolIds.has(tool.id)) {
+              seenToolIds.add(tool.id);
+              destination.write(`   ${formatToolUse(tool.name, tool.filePath)}\n`);
             }
           }
 
-          // Handle user messages with tool results
-          if (event.type === "user" && event.toolUseResult) {
-            const result = event.toolUseResult;
-            if (result.filePath) {
-              destination.write(`   ✅ Created: ${result.filePath}\n`);
-            }
+          // Show usage stats on end_turn
+          const usage = extractUsageStats(event);
+          if (usage) {
+            destination.write(`\n   ${formatUsageStats(usage)}\n`);
           }
-        } catch {
-          // Not valid JSON, skip
+        }
+
+        // Handle user messages with tool results
+        if (event.type === "user" && event.toolUseResult) {
+          const result = event.toolUseResult;
+          if (result.filePath) {
+            destination.write(`   ✅ Created: ${result.filePath}\n`);
+          }
         }
       }
     }
 
     // Process remaining buffer
-    if (buffer.trim()) {
-      try {
-        const event = JSON.parse(buffer);
-        if (event.type === "assistant" && event.message?.content) {
-          for (const block of event.message.content) {
-            if (block.type === "text" && block.text) {
-              fullContent += block.text;
-              destination.write(block.text);
-            }
-          }
-        }
-      } catch {
-        // Not valid JSON
+    if (state.buffer.trim()) {
+      const event = parseStreamLine(state.buffer);
+      if (event) {
+        accumulateTextFromEvent(state, event);
       }
     }
   } finally {
     reader.releaseLock();
   }
 
-  return fullContent;
+  return state.fullContent;
 }
 
 /**
@@ -172,9 +148,7 @@ async function parseStreamJsonWithStatus(
 ): Promise<string> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
-  let fullContent = "";
-  let buffer = "";
-  const seenTextIds = new Set<string>();
+  const state = createStreamParserState();
   const seenToolIds = new Set<string>();
 
   try {
@@ -182,75 +156,64 @@ async function parseStreamJsonWithStatus(
       const { done, value } = await reader.read();
       if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
-
-      // Process complete JSON lines
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = processStreamChunk(state, chunk);
 
       for (const line of lines) {
-        if (!line.trim()) continue;
+        const event = parseStreamLine(line);
+        if (!event) continue;
 
-        try {
-          const event = JSON.parse(line);
+        // Handle assistant messages
+        if (event.type === "assistant" && event.message?.content) {
+          const msgId = event.message.id || event.uuid || "";
 
-          // Handle assistant messages
-          if (event.type === "assistant" && event.message?.content) {
-            const msgId = event.message?.id || event.uuid || "";
+          for (let i = 0; i < event.message.content.length; i++) {
+            const block = event.message.content[i];
+            if (!block) continue;
 
-            for (let i = 0; i < event.message.content.length; i++) {
-              const block = event.message.content[i];
-
-              // Capture text content
-              if (block.type === "text" && block.text) {
-                const textKey = `${msgId}-text-${i}`;
-                if (!seenTextIds.has(textKey)) {
-                  seenTextIds.add(textKey);
-                  fullContent += block.text;
-                  // Report first 20 chars of text as status
-                  const preview = block.text.slice(0, 20).replace(/\n/g, " ").trim();
-                  if (preview) {
-                    onStatus?.(preview + (block.text.length > 20 ? "…" : ""));
-                  }
+            // Capture text content
+            if (block.type === "text" && block.text) {
+              const textKey = `${msgId}-text-${i}`;
+              if (!state.seenTextIds.has(textKey)) {
+                state.seenTextIds.add(textKey);
+                state.fullContent += block.text;
+                // Report first 20 chars of text as status
+                const preview = block.text.slice(0, 20).replace(/\n/g, " ").trim();
+                if (preview) {
+                  onStatus?.(preview + (block.text.length > 20 ? "…" : ""));
                 }
               }
+            }
 
-              // Report tool usage
-              if (block.type === "tool_use" && block.id && !seenToolIds.has(block.id)) {
-                seenToolIds.add(block.id);
-                const toolName = block.name || "Tool";
-                const filePath = block.input?.file_path || block.input?.path || block.input?.command || "";
-                const shortPath = filePath.split("/").pop()?.slice(0, 15) || "";
-                onStatus?.(shortPath ? `${toolName}:${shortPath}` : toolName);
-              }
+            // Report tool usage
+            if (block.type === "tool_use" && block.id && !seenToolIds.has(block.id)) {
+              seenToolIds.add(block.id);
+              const toolName = block.name || "Tool";
+              const filePath = block.input?.file_path || block.input?.path || block.input?.command || "";
+              const shortPath = filePath.split("/").pop()?.slice(0, 15) || "";
+              onStatus?.(shortPath ? `${toolName}:${shortPath}` : toolName);
             }
           }
-        } catch {
-          // Not valid JSON, skip
         }
       }
     }
 
     // Process remaining buffer
-    if (buffer.trim()) {
-      try {
-        const event = JSON.parse(buffer);
-        if (event.type === "assistant" && event.message?.content) {
-          for (const block of event.message.content) {
-            if (block.type === "text" && block.text) {
-              fullContent += block.text;
-            }
+    if (state.buffer.trim()) {
+      const event = parseStreamLine(state.buffer);
+      if (event && event.type === "assistant" && event.message?.content) {
+        for (const block of event.message.content) {
+          if (block.type === "text" && block.text) {
+            state.fullContent += block.text;
           }
         }
-      } catch {
-        // Not valid JSON
       }
     }
   } finally {
     reader.releaseLock();
   }
 
-  return fullContent;
+  return state.fullContent;
 }
 
 async function main() {
@@ -297,12 +260,8 @@ Examples:
 
   // Check if it's a file path
   let systemPrompt: string;
-  const looksLikePath = promptArg.endsWith(".md") ||
-    promptArg.startsWith("./") ||
-    promptArg.startsWith("/") ||
-    promptArg.startsWith("../");
 
-  if (looksLikePath) {
+  if (looksLikePath(promptArg)) {
     const resolvedPath = resolve(promptArg);
     const isFile = await Bun.file(resolvedPath).exists();
     if (!isFile) {
@@ -608,63 +567,6 @@ exit 0
 
   // Return the extracted text content
   return { output, exitCode };
-}
-
-/**
- * Parse variation info from design phase output
- */
-function parseVariationInfo(output: string, fallbackCount: number): VariationInfo[] {
-  // Try to find JSON block in output
-  const jsonMatch = output.match(/```json\s*([\s\S]*?)\s*```/);
-  if (jsonMatch && jsonMatch[1]) {
-    try {
-      const parsed = JSON.parse(jsonMatch[1]);
-      if (parsed.variations && Array.isArray(parsed.variations)) {
-        return parsed.variations;
-      }
-    } catch {
-      // Fall through to defaults
-    }
-  }
-
-  // Default variation info
-  const strategies = ["PERSONA", "EXEMPLAR", "CONSTRAINT", "SOCRATIC", "CHECKLIST"];
-  return Array.from({ length: fallbackCount }, (_, i) => ({
-    number: i + 1,
-    strategy: strategies[i] || `VARIATION_${i + 1}`,
-    summary: `Variation ${i + 1}`,
-  }));
-}
-
-interface ParsedArgs {
-  flags: Record<string, string>;
-  positional: string[];
-}
-
-function parseArgs(args: string[]): ParsedArgs {
-  const flags: Record<string, string> = {};
-  const positional: string[] = [];
-
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === undefined) continue;
-    if (arg.startsWith("--")) {
-      const key = arg.slice(2).replace(/-/g, "");
-      const nextArg = args[i + 1];
-      if (nextArg !== undefined && !nextArg.startsWith("--")) {
-        flags[key] = nextArg;
-        i++;
-      } else {
-        flags[key] = "true";
-      }
-    } else if (arg.startsWith("-") && arg.length === 2) {
-      flags[arg.slice(1)] = "true";
-    } else {
-      positional.push(arg);
-    }
-  }
-
-  return { flags, positional };
 }
 
 main().catch(console.error);

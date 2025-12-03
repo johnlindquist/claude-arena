@@ -1,9 +1,10 @@
+import { describe, it, expect } from "vitest";
 import {
   validateRegistrationForm,
   validateField,
-  RegistrationForm,
-  ValidationResult,
-  RawRegistrationForm
+  type RegistrationForm,
+  type ValidationResult,
+  type RawRegistrationForm,
 } from "./formValidation";
 
 describe("Form Validation System", () => {
@@ -263,7 +264,7 @@ describe("Form Validation System", () => {
         email: "user@example.com",
         password: "short",
         confirmPassword: "different",
-        role: "user" as Role
+        role: "user" as const,
       };
 
       const result = validateRegistrationForm(form);
