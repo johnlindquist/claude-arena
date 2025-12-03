@@ -117,6 +117,80 @@ async function parseStreamJson(
 }
 
 /**
+ * Parse stream-json output with a spinner instead of streaming all text.
+ * Shows tool activity and file writes on the spinner, suppresses verbose text.
+ */
+async function parseStreamJsonWithSpinner(
+	stream: ReadableStream,
+	spinner: ReturnType<typeof ora>,
+): Promise<string> {
+	const reader = stream.getReader();
+	const decoder = new TextDecoder();
+	const state = createStreamParserState();
+	const seenToolIds = new Set<string>();
+	const writtenFiles: string[] = [];
+
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+
+			const chunk = decoder.decode(value, { stream: true });
+			const lines = processStreamChunk(state, chunk);
+
+			for (const line of lines) {
+				const event = parseStreamLine(line);
+				if (!event) continue;
+
+				// Handle assistant messages
+				if (event.type === "assistant" && event.message?.content) {
+					// Accumulate text content (but don't display it)
+					accumulateTextFromEvent(state, event);
+
+					// Show tool activity on spinner
+					const toolUses = extractToolUses(event);
+					for (const tool of toolUses) {
+						if (!seenToolIds.has(tool.id)) {
+							seenToolIds.add(tool.id);
+							const shortPath = tool.filePath?.split("/").pop() || "";
+							if (tool.name === "Write" && shortPath) {
+								spinner.text = `Writing ${pc.cyan(shortPath)}...`;
+							} else if (shortPath) {
+								spinner.text = `${tool.name}: ${pc.dim(shortPath)}`;
+							} else {
+								spinner.text = `${tool.name}...`;
+							}
+						}
+					}
+				}
+
+				// Handle user messages with tool results (file created confirmations)
+				if (event.type === "user" && event.toolUseResult) {
+					const result = event.toolUseResult;
+					if (result.filePath) {
+						const shortPath = result.filePath.split("/").pop() || result.filePath;
+						writtenFiles.push(shortPath);
+						spinner.text = `${pc.green("✓")} Created ${pc.cyan(shortPath)} (${writtenFiles.length} files)`;
+					}
+				}
+			}
+		}
+
+		// Process remaining buffer
+		if (state.buffer.trim()) {
+			const event = parseStreamLine(state.buffer);
+			if (event && event.type === "assistant" && event.message?.content) {
+				accumulateTextFromEvent(state, event);
+			}
+		}
+	} finally {
+		reader.releaseLock();
+	}
+
+	return state.fullContent;
+}
+
+/**
  * Simple tee helper - reads a stream, writes to destination, captures content.
  * Used for stderr or non-stream-json output.
  */
@@ -584,7 +658,8 @@ Format your response as:
 			model,
 			systemPrompt: designPrompt,
 			userMessage: "Begin now - write all variation files.",
-			streamOutput: true,
+			useSpinner: true,
+			spinnerText: "Analyzing prompt and generating variations...",
 		});
 
 		if (designResult.exitCode !== 0) {
@@ -610,7 +685,8 @@ Format your response as:
 			model,
 			systemPrompt: designPrompt,
 			userMessage: "Begin now - write the task and all variation files.",
-			streamOutput: true,
+			useSpinner: true,
+			spinnerText: "Analyzing prompt, designing task, and generating variations...",
 		});
 
 		if (designResult.exitCode !== 0) {
@@ -1071,12 +1147,17 @@ async function runVariation(options: RunVariationOptions): Promise<VariationResu
 /**
  * Run claude with given parameters
  * Uses stream-json format for real-time output while capturing content
+ *
+ * @param options.useSpinner - If true, use a spinner instead of streaming text output
+ * @param options.spinnerText - Initial text for the spinner (only used if useSpinner is true)
  */
 async function runClaude(options: {
 	model: string;
 	systemPrompt: string;
 	userMessage: string;
 	streamOutput?: boolean;
+	useSpinner?: boolean;
+	spinnerText?: string;
 }): Promise<{ output: string; exitCode: number }> {
 	const mcpConfig = { mcpServers: {} };
 
@@ -1126,16 +1207,39 @@ exit 0
 		stderr: "pipe",
 	});
 
-	// Parse the stream-json output - extracts text and prints to console
-	const stdoutPromise = parseStreamJson(proc.stdout, process.stdout);
-	// Tee stderr to console (for error messages)
-	const stderrPromise = teeStream(proc.stderr, process.stderr);
+	let stdoutPromise: Promise<string>;
+	let spinner: ReturnType<typeof ora> | null = null;
+
+	if (options.useSpinner) {
+		// Use spinner mode - show progress without streaming all text
+		spinner = ora({
+			text: options.spinnerText || "Working...",
+			color: "cyan",
+		}).start();
+		stdoutPromise = parseStreamJsonWithSpinner(proc.stdout, spinner);
+		// Silently consume stderr in spinner mode
+		new Response(proc.stderr).text();
+	} else {
+		// Stream mode - show all output
+		stdoutPromise = parseStreamJson(proc.stdout, process.stdout);
+		// Tee stderr to console (for error messages)
+		teeStream(proc.stderr, process.stderr);
+	}
 
 	// Wait for process to finish
 	const exitCode = await proc.exited;
 
-	// Wait for streams to finish flushing
-	const [output] = await Promise.all([stdoutPromise, stderrPromise]);
+	// Wait for stdout to finish
+	const output = await stdoutPromise;
+
+	// Stop spinner if used
+	if (spinner) {
+		if (exitCode === 0) {
+			spinner.succeed("Done");
+		} else {
+			spinner.fail("Failed");
+		}
+	}
 
 	// Return the extracted text content
 	return { output, exitCode };
