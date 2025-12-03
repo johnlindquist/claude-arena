@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/johnlindquist/claude-arena/compare/v1.2.0...v1.2.1) (2025-12-03)
+
+
+### Bug Fixes
+
+* remove broken cursor-based status updates for variations ([0b7f55c](https://github.com/johnlindquist/claude-arena/commit/0b7f55c82ca4b0eebb683c5da8dc0dc2f13440c6))
+
 # [1.2.0](https://github.com/johnlindquist/claude-arena/compare/v1.1.0...v1.2.0) (2025-12-03)
 
 

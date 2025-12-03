@@ -1,12 +1,14 @@
 {
 	"name": "claude-arena",
-	"version": "1.2.0",
+	"version": "1.2.1",
 	"description": "Evaluate and optimize system prompt effectiveness - find the best way to express your system prompts",
 	"type": "module",
 	"bin": {
 		"claude-arena": "./src/index.ts"
 	},
-	"files": ["src"],
+	"files": [
+		"src"
+	],
 	"scripts": {
 		"start": "bun run src/index.ts",
 		"test": "vitest",
