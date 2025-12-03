@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/johnlindquist/claude-arena/compare/v1.3.0...v1.4.0) (2025-12-03)
+
+
+### Features
+
+* add testable arena module with mocked Claude interactions ([16c08f6](https://github.com/johnlindquist/claude-arena/commit/16c08f6b02f477eb4fc6cb8b7cffdc7e08226a41))
+
 # [1.3.0](https://github.com/johnlindquist/claude-arena/compare/v1.2.1...v1.3.0) (2025-12-03)
 
 
