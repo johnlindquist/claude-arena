@@ -6,6 +6,9 @@
   "bin": {
     "claude-arena": "./src/index.ts"
   },
+  "files": [
+    "src"
+  ],
   "scripts": {
     "check": "bun run src/index.ts",
     "test": "vitest"
@@ -20,8 +23,16 @@
     "ai",
     "evaluation"
   ],
-  "author": "",
+  "author": "John Lindquist",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/johnlindquist/claude-arena.git"
+  },
+  "homepage": "https://github.com/johnlindquist/claude-arena#readme",
+  "bugs": {
+    "url": "https://github.com/johnlindquist/claude-arena/issues"
+  },
   "devDependencies": {
     "@types/bun": "latest",
     "typescript": "^5",

@@ -18,7 +18,58 @@ const VARIATION_STRATEGIES = `
 `;
 
 /**
- * Step 1: Design prompt - generates task.md and variation-*.md files
+ * Step 1a: Variations-only prompt - when user provides their own task
+ */
+export function buildVariationsOnlyPrompt(systemPrompt: string, variations: number): string {
+   const outputDir = `${tmpDir}/${timestamp}`;
+
+   return `You are a SYSTEM PROMPT VARIATION DESIGNER.
+
+Your job is to create ${variations} system prompt variations to test.
+
+## 🚨 CRITICAL RESTRICTIONS 🚨
+
+You are running inside the claude-arena tool directory. DO NOT:
+- Read ANY .ts, .js, .json, or source files in this directory
+- Explore or analyze the tool's own codebase
+- Use Glob, Grep, or Read on any source files
+
+You ONLY need to write files to: ${outputDir}
+
+## The System Prompt to Evaluate
+
+"${systemPrompt}"
+
+## Your Task: Generate ${variations} System Prompt Variations
+
+Create ${variations} different ways to express the system prompt as CLAUDE.md-style instructions.
+Each variation should use a DIFFERENT STRATEGY:
+${VARIATION_STRATEGIES}
+
+Write each variation to a separate file:
+- ${outputDir}/variation-1.md
+- ${outputDir}/variation-2.md
+- ... through variation-${variations}.md
+
+## Output
+
+After writing all files, output a JSON summary:
+
+\`\`\`json
+{
+  "variations": [
+    { "number": 1, "strategy": "PERSONA", "summary": "Brief description" },
+    { "number": 2, "strategy": "EXEMPLAR", "summary": "Brief description" },
+    ...
+  ]
+}
+\`\`\`
+
+Begin now - write all variation files.`;
+}
+
+/**
+ * Step 1b: Design prompt - generates task.md and variation-*.md files
  */
 export function buildDesignPrompt(systemPrompt: string, variations: number): string {
    const outputDir = `${tmpDir}/${timestamp}`;
@@ -98,21 +149,24 @@ export function buildEvaluationPrompt(
    outputDir: string
 ): string {
    const variationSummaries = variations
-      .map((v, i) => `${i + 1}. **${v.strategy}**: ${v.summary}`)
+      .map((v) => `${v.number}. **${v.strategy}**: ${v.summary}`)
       .join("\n");
 
    const resultBlocks = results
-      .map((r, i) => `
-### Variation ${i + 1}: ${variations[i]?.strategy || "UNKNOWN"}
+      .map((r) => {
+         const varInfo = variations.find(v => v.number === r.variationNumber);
+         return `
+### Variation ${r.variationNumber}: ${varInfo?.strategy || "UNKNOWN"}
 
-**Project Path**: \`${outputDir}/run-${i + 1}\`
+**Project Path**: \`${outputDir}/run-${r.variationNumber}\`
 
 <output>
 ${r.output}
 </output>
 
 Exit code: ${r.exitCode}
-`)
+`;
+      })
       .join("\n");
 
    return `You are a SYSTEM PROMPT EFFECTIVENESS EVALUATOR.
@@ -151,14 +205,22 @@ For each output, score on:
 \`\`\`
 ## Results
 
-### Variation 1: ${variations[0]?.strategy || "PERSONA"}
+### Variation 0: BASELINE (Original System Prompt)
+**Project**: \`${outputDir}/run-0\`
+
+[Code output analysis - this is the BASELINE to compare against]
+Scores: Adherence=X, Integration=X, Quality=X, Consistency=X
+Total: X/12
+
+### Variation 1: ${variations.find(v => v.number === 1)?.strategy || "PERSONA"}
 **Project**: \`${outputDir}/run-1\`
 
 [Code output analysis]
 Scores: Adherence=X, Integration=X, Quality=X, Consistency=X
 Total: X/12
+Improvement over baseline: +/- X points
 
-### Variation 2: ${variations[1]?.strategy || "EXEMPLAR"}
+### Variation 2: ${variations.find(v => v.number === 2)?.strategy || "EXEMPLAR"}
 **Project**: \`${outputDir}/run-2\`
 
 ...
@@ -168,8 +230,9 @@ Total: X/12
 
 **Winner**: Variation N (STYLE)
 **Score**: X/12
+**Improvement over Baseline**: +/- X points
 
-**Why it worked**:
+**Why it worked** (or why baseline was best):
 - ...
 
 **Optimized Version**:
@@ -180,6 +243,8 @@ Total: X/12
 
 ## Important Notes
 
+- Variation 0 (BASELINE) is the original system prompt - use it as the reference point
+- If no variation beats the baseline, recommend keeping the original
 - Be objective - don't favor verbose over terse just because it's more detailed
 - The objective is EFFECTIVENESS, not length or style preference
 - If multiple variations tie, prefer the simpler one

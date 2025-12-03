@@ -2,9 +2,11 @@
 // src/index.ts
 
 import { resolve, join } from "node:path";
+import { homedir } from "node:os";
 import { mkdir } from "node:fs/promises";
 import {
   buildDesignPrompt,
+  buildVariationsOnlyPrompt,
   buildEvaluationPrompt,
   getOutputDir,
   type VariationInfo,
@@ -12,6 +14,7 @@ import {
 } from "./prompts";
 import { parseArgs, looksLikePath } from "./args-parser";
 import { parseVariationInfo } from "./variation-parser";
+import { resolveImports } from "./import-resolver";
 import {
   parseStreamLine,
   accumulateTextFromEvent,
@@ -224,59 +227,108 @@ async function main() {
     console.log(`
 claude-arena - Evaluate and optimize system prompt effectiveness
 
-Usage: claude-arena <system-prompt|file.md> [options]
+Usage: claude-arena [system-prompt|file.md] [options]
 
 The judge will:
   1. Generate a task that reveals system prompt adherence
   2. Create variations of your system prompt (persona, exemplar, constraint, socratic, checklist)
-  3. Run each variation against the task using Haiku (in parallel)
-  4. Evaluate results and recommend the best approach
+  3. Run baseline (original prompt) + all variations against the task (in parallel)
+  4. Evaluate results and recommend the best approach vs baseline
 
 Arguments:
   system-prompt           The system prompt to evaluate (string or path to .md file)
+                          Optional if using --user mode
 
 Options:
   --model <model>         Judge model: opus, sonnet (default: opus)
+  --test-model <model>    Model for running variations (default: haiku)
   --variations <n>        Number of variations to test (default: 5)
+  --user                  Test your ~/.claude/CLAUDE.md configuration
+                          If combined with a prompt, appends to your config
+  --task <task>           Provide a specific task instead of AI-generated one
   --help                  Show this help
 
 Examples:
   claude-arena "code should follow Python's Zen principles"
   claude-arena ./goals/zen-principles.md
-  claude-arena "avoid code smells: feature envy, shotgun surgery"
-  claude-arena --model opus ./my-design-principles.md
+  claude-arena --user                              # Test your CLAUDE.md
+  claude-arena --user "also enforce TDD"           # Append to your config
+  claude-arena --task "build a REST API" "use TypeScript strictly"
+  claude-arena --test-model sonnet "complex prompt"
 `);
     process.exit(0);
   }
 
-  // Get the system prompt from positional args
-  const promptArg = positional.join(" ");
-  if (!promptArg) {
-    console.error("❌ Please provide a system prompt to evaluate");
-    console.error("\nExample: claude-arena \"code should follow Python's Zen principles\"");
-    console.error("         claude-arena ./my-system-prompt.md");
-    process.exit(1);
-  }
-
-  // Check if it's a file path
-  let systemPrompt: string;
-
-  if (looksLikePath(promptArg)) {
-    const resolvedPath = resolve(promptArg);
-    const isFile = await Bun.file(resolvedPath).exists();
-    if (!isFile) {
-      console.error(`❌ File not found: ${promptArg}`);
-      process.exit(1);
-    }
-    systemPrompt = await Bun.file(resolvedPath).text();
-    console.log(`📄 Loaded system prompt from: ${promptArg}`);
-  } else {
-    systemPrompt = promptArg;
-  }
-
+  // Parse flags
+  const userMode = flags.user === "true";
+  const userTask = flags.task || null;
+  const testModel = flags.testmodel || "haiku";
   const model = flags.model || "opus";
   const variations = Number(flags.variations) || 5;
   const outputDir = getOutputDir();
+
+  // Get the system prompt from positional args
+  const promptArg = positional.join(" ");
+
+  // Build the system prompt based on mode
+  let systemPrompt: string;
+  let settingSources: string;
+
+  if (userMode) {
+    // User mode: read ~/.claude/CLAUDE.md
+    const claudeMdPath = join(homedir(), ".claude", "CLAUDE.md");
+    const claudeMdFile = Bun.file(claudeMdPath);
+
+    if (!(await claudeMdFile.exists())) {
+      console.error(`❌ CLAUDE.md not found at ${claudeMdPath}`);
+      console.error("\nUser mode requires ~/.claude/CLAUDE.md to exist.");
+      process.exit(1);
+    }
+
+    const rawConfig = await claudeMdFile.text();
+    // Resolve @filepath imports (e.g., @~/.claude/preferences.md)
+    const userConfig = await resolveImports(rawConfig, claudeMdPath);
+    console.log(`📄 Loaded user config from: ${claudeMdPath}`);
+
+    if (promptArg) {
+      // Append additional prompt to user config
+      systemPrompt = `${userConfig}\n\n---\n\n## Additional Instructions\n\n${promptArg}`;
+      console.log(`   + Appending: "${promptArg.slice(0, 50)}${promptArg.length > 50 ? '...' : ''}"`);
+    } else {
+      systemPrompt = userConfig;
+    }
+
+    // Use user's settings when running variations
+    settingSources = "user";
+  } else {
+    // Standard mode: require a prompt
+    if (!promptArg) {
+      console.error("❌ Please provide a system prompt to evaluate");
+      console.error("\nExample: claude-arena \"code should follow Python's Zen principles\"");
+      console.error("         claude-arena ./my-system-prompt.md");
+      console.error("         claude-arena --user  # to test your CLAUDE.md");
+      process.exit(1);
+    }
+
+    // Check if it's a file path
+    if (looksLikePath(promptArg)) {
+      const resolvedPath = resolve(promptArg);
+      const isFile = await Bun.file(resolvedPath).exists();
+      if (!isFile) {
+        console.error(`❌ File not found: ${promptArg}`);
+        process.exit(1);
+      }
+      const rawContent = await Bun.file(resolvedPath).text();
+      // Resolve @filepath imports if present
+      systemPrompt = await resolveImports(rawContent, resolvedPath);
+      console.log(`📄 Loaded system prompt from: ${promptArg}`);
+    } else {
+      systemPrompt = promptArg;
+    }
+
+    // Isolated settings for standard mode
+    settingSources = "";
+  }
 
   // Truncate system prompt for display
   const promptDisplay = systemPrompt.length > 60
@@ -287,7 +339,14 @@ Examples:
   console.log("━".repeat(55));
   console.log(`Prompt:     ${promptDisplay}`);
   console.log(`Judge:      ${model}. Adjust with --model <model>`);
+  console.log(`Test model: ${testModel}. Adjust with --test-model <model>`);
   console.log(`Variations: ${variations}. Adjust with --variations <n>`);
+  if (userMode) {
+    console.log(`Mode:       user (testing ~/.claude/CLAUDE.md)`);
+  }
+  if (userTask) {
+    console.log(`Task:       user-provided`);
+  }
   console.log("━".repeat(55));
   console.log("");
   console.log(`📁 Output directory: ${outputDir}`);
@@ -298,36 +357,74 @@ Examples:
   // ============================================
   // STEP 1: Design Phase - Generate task and variations
   // ============================================
-  console.log("\n🎯 Step 1: Designing task and variations...\n");
-
-  const designPrompt = buildDesignPrompt(systemPrompt, variations);
-  const designResult = await runClaude({
-    model,
-    systemPrompt: designPrompt,
-    userMessage: "Begin now - write the task and all variation files.",
-    streamOutput: true,
-  });
-
-  if (designResult.exitCode !== 0) {
-    console.error("\n❌ Design phase failed");
-    process.exit(1);
-  }
-
-  // Parse the variation info from the design output (look for JSON block)
-  const variationInfo = parseVariationInfo(designResult.output, variations);
-
-  // Read the generated task
+  let task: string;
+  let variationInfo: VariationInfo[];
   const taskPath = join(outputDir, "task.md");
-  const taskFile = Bun.file(taskPath);
-  if (!(await taskFile.exists())) {
-    console.error(`\n❌ Task file not found at ${taskPath}`);
-    process.exit(1);
+
+  if (userTask) {
+    // User provided a task - just generate variations
+    console.log("\n🎯 Step 1: Generating variations for user-provided task...\n");
+
+    task = userTask;
+    await Bun.write(taskPath, task);
+    console.log(`   📝 Using user-provided task`);
+
+    const designPrompt = buildVariationsOnlyPrompt(systemPrompt, variations);
+    const designResult = await runClaude({
+      model,
+      systemPrompt: designPrompt,
+      userMessage: "Begin now - write all variation files.",
+      streamOutput: true,
+    });
+
+    if (designResult.exitCode !== 0) {
+      console.error("\n❌ Design phase failed");
+      process.exit(1);
+    }
+
+    variationInfo = parseVariationInfo(designResult.output, variations);
+  } else {
+    // AI generates both task and variations
+    console.log("\n🎯 Step 1: Designing task and variations...\n");
+
+    const designPrompt = buildDesignPrompt(systemPrompt, variations);
+    const designResult = await runClaude({
+      model,
+      systemPrompt: designPrompt,
+      userMessage: "Begin now - write the task and all variation files.",
+      streamOutput: true,
+    });
+
+    if (designResult.exitCode !== 0) {
+      console.error("\n❌ Design phase failed");
+      process.exit(1);
+    }
+
+    variationInfo = parseVariationInfo(designResult.output, variations);
+
+    // Read the generated task
+    const taskFile = Bun.file(taskPath);
+    if (!(await taskFile.exists())) {
+      console.error(`\n❌ Task file not found at ${taskPath}`);
+      process.exit(1);
+    }
+    task = await taskFile.text();
   }
-  const task = await taskFile.text();
+
+  // Write the baseline (variation 0) - original system prompt as-is
+  const baselinePath = join(outputDir, "variation-0.md");
+  await Bun.write(baselinePath, systemPrompt);
+
+  // Add baseline to variationInfo at the beginning
+  variationInfo.unshift({
+    number: 0,
+    strategy: "BASELINE",
+    summary: "Original system prompt without modifications",
+  });
 
   console.log("\n✅ Design phase complete");
   console.log(`   Task: ${taskPath}`);
-  console.log(`   Variations: ${variations} files generated`);
+  console.log(`   Variations: ${variations} + baseline (variation 0) generated`);
 
   // ============================================
   // STEP 2: Run all variations in parallel
@@ -340,15 +437,22 @@ Examples:
   const variationStatus: Map<number, string> = new Map();
 
   const updateStatus = () => {
-    // Clear line and print all statuses
+    // Build status line with truncated status per variation
     const statusLine = Array.from(variationStatus.entries())
       .sort((a, b) => a[0] - b[0])
-      .map(([num, status]) => `[${num}] ${status}`)
-      .join("  ");
-    process.stdout.write(`\r   ${statusLine}${"".padEnd(20)}`);
+      .map(([num, status]) => `[${num}] ${status.slice(0, 12)}`)
+      .join(" ");
+
+    // Truncate to terminal width to prevent wrapping
+    const maxWidth = (process.stdout.columns || 80) - 4;
+    const truncated = statusLine.slice(0, maxWidth);
+
+    // Clear entire line with ANSI escape code, then write status
+    process.stdout.write(`\x1b[2K\r   ${truncated}`);
   };
 
-  for (let i = 1; i <= variations; i++) {
+  // Start from 0 (baseline) through variations count
+  for (let i = 0; i <= variations; i++) {
     const variationPath = join(outputDir, `variation-${i}.md`);
     const variationFile = Bun.file(variationPath);
 
@@ -363,20 +467,37 @@ Examples:
 
     variationStatus.set(i, "starting...");
 
+    // Baseline (i=0) in user mode: use settingSources="user", no append (Claude CLI loads CLAUDE.md)
+    // Variations (i>0): use settingSources="" (isolated), append variation content
+    // Standard mode: all variations use settingSources="" with their content appended
+    const isBaseline = i === 0;
+    const runSettingSources = isBaseline && userMode ? "user" : "";
+    const runAppendContent = isBaseline && userMode ? "" : variationContent;
+
     variationPromises.push(
-      runVariation(i, task, variationContent, workDir, (status) => {
-        variationStatus.set(i, status);
-        updateStatus();
+      runVariation({
+        variationNumber: i,
+        task,
+        variationContent: runAppendContent,
+        workDir,
+        testModel,
+        settingSources: runSettingSources,
+        onStatus: (status) => {
+          variationStatus.set(i, status);
+          updateStatus();
+        },
       })
     );
   }
 
-  // Show initial status
+  // Show initial status (stays on same line, updated in place)
   updateStatus();
-  console.log(); // newline after status
 
   // Wait for all variations to complete (don't fail if some error out)
   const settled = await Promise.allSettled(variationPromises);
+
+  // Move to new line after all variations complete
+  console.log();
 
   const results: VariationResult[] = [];
   let successCount = 0;
@@ -431,20 +552,39 @@ Examples:
     streamOutput: true,
   });
 
+  console.log("\n" + "━".repeat(55));
+  console.log("Want to refine the results or apply the optimized prompt?");
+  console.log("Continue interactively with: claude --resume");
+  console.log("━".repeat(55));
+
   process.exit(evalResult.exitCode);
+}
+
+interface RunVariationOptions {
+  variationNumber: number;
+  task: string;
+  variationContent: string;
+  workDir: string;
+  testModel: string;
+  settingSources: string;
+  onStatus?: (status: string) => void;
 }
 
 /**
  * Run a single variation test
  * Uses stream-json format, captures stdout quietly to avoid interleaved parallel output
  */
-async function runVariation(
-  variationNumber: number,
-  task: string,
-  variationContent: string,
-  workDir: string,
-  onStatus?: (status: string) => void
-): Promise<VariationResult> {
+async function runVariation(options: RunVariationOptions): Promise<VariationResult> {
+  const {
+    variationNumber,
+    task,
+    variationContent,
+    workDir,
+    testModel,
+    settingSources,
+    onStatus,
+  } = options;
+
   try {
     const mcpConfig = { mcpServers: {} };
     const settings = {
@@ -457,26 +597,30 @@ async function runVariation(
       }
     }
 
-    const proc = Bun.spawn(
-      [
-        "claude",
-        "--model", "haiku",
-        "--print",
-        "--output-format", "stream-json",
-        "--verbose",
-        `git init && complete this task in full:\n\n${task}\n\n--- CRITICAL: Once complete, diff all of the changed files. NEVER SUMMARIZE!`,
-        "--permission-mode", "bypassPermissions",
-        "--append-system-prompt", variationContent,
-        "--setting-sources", "",
-        "--settings", JSON.stringify(settings),
-        "--mcp-config", JSON.stringify(mcpConfig),
-      ],
-      {
-        cwd: workDir,
-        stdout: "pipe",
-        stderr: "pipe",
-      }
-    );
+    // Build args, conditionally including --append-system-prompt only if content is non-empty
+    const args = [
+      "claude",
+      "--model", testModel,
+      "--print",
+      "--output-format", "stream-json",
+      "--verbose",
+      `git init && complete this task in full:\n\n${task}\n\n--- CRITICAL: Once complete, diff all of the changed files. NEVER SUMMARIZE!`,
+      "--permission-mode", "bypassPermissions",
+      "--setting-sources", settingSources,
+      "--settings", JSON.stringify(settings),
+      "--mcp-config", JSON.stringify(mcpConfig),
+    ];
+
+    // Only append system prompt if there's content to append
+    if (variationContent) {
+      args.splice(args.indexOf("--setting-sources"), 0, "--append-system-prompt", variationContent);
+    }
+
+    const proc = Bun.spawn(args, {
+      cwd: workDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
 
     // Ignore stderr for variations (too noisy)
     new Response(proc.stderr).text();

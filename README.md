@@ -41,24 +41,61 @@ Your System Prompt
 
 ## Installation
 
+### Quick start (no install)
+
+```bash
+bunx claude-arena "code should follow Python's Zen principles"
+```
+
+### Global install
+
+```bash
+bun add -g claude-arena
+# or
+npm install -g claude-arena
+```
+
+### From source
+
 ```bash
 git clone https://github.com/johnlindquist/claude-arena
 cd claude-arena
 bun install
+bun link  # Makes 'claude-arena' available globally
 ```
 
 ## Usage
 
 ```bash
 # Pass a system prompt directly
-bun run check "code should follow Python's Zen principles"
+claude-arena "code should follow Python's Zen principles"
 
 # Or pass a markdown file
-bun run check ./my-system-prompt.md
+claude-arena ./my-system-prompt.md
 
-# Options
-bun run check --model sonnet "your prompt"     # Use Sonnet as judge (default: opus)
-bun run check --variations 3 "your prompt"     # Test fewer variations (default: 5)
+# Test your own CLAUDE.md configuration
+claude-arena --user
+
+# Test your CLAUDE.md with additional instructions
+claude-arena --user "also enforce strict TypeScript"
+
+# Provide your own task instead of AI-generated one
+claude-arena --task "build a REST API with auth" "use TypeScript strictly"
+
+# Change the model used for test runs (default: haiku)
+claude-arena --test-model sonnet "complex prompt"
+
+# Change the judge model (default: opus)
+claude-arena --model sonnet "your prompt"
+
+# Test fewer variations
+claude-arena --variations 3 "your prompt"
+```
+
+### From source (without global install)
+
+```bash
+bun run check "your prompt"
 ```
 
 ## Output
@@ -89,19 +126,19 @@ The final evaluation includes:
 
 ```bash
 # Design principles
-bun run check "Beautiful is better than ugly. Simple is better than complex."
+claude-arena "Beautiful is better than ugly. Simple is better than complex."
 
 # Code quality rules
-bun run check "avoid code smells: feature envy, shotgun surgery, primitive obsession"
+claude-arena "avoid code smells: feature envy, shotgun surgery, primitive obsession"
 
 # TDD workflow
-bun run check "always write tests before implementation, follow red-green-refactor"
+claude-arena "always write tests before implementation, follow red-green-refactor"
 
 # TypeScript strictness
-bun run check "never use 'any' type, always define explicit return types"
+claude-arena "never use 'any' type, always define explicit return types"
 
 # From a file
-bun run check ./goals/zen-principles.md
+claude-arena ./goals/zen-principles.md
 ```
 
 ## Requirements
