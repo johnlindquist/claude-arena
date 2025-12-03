@@ -1,59 +1,6 @@
 import { tmpDir, timestamp } from "./const";
 
-const mcpConfig = {
-   "mcpServers": {}
-}
-
-
-export function buildJudgePrompt(systemPrompt: string, variations: number): string {
-   return `You are a SYSTEM PROMPT EFFECTIVENESS EVALUATOR.
-
-Your job is to determine which style of writing system prompts best achieves a given objective.
-
-## 🚨 CRITICAL RESTRICTIONS 🚨
-
-You are running inside the claude-checker tool directory. DO NOT:
-- Read ANY .ts, .js, .json, or source files in this directory
-- Read index.ts, prompts.ts, types.ts, package.json, etc.
-- Explore or analyze the tool's own codebase
-- Use Glob, Grep, or Read on the current directory's source files
-
-You ONLY need to:
-1. Write variation-*.md files (your generated system prompt variations) in ${tmpDir}/${timestamp}
-2. Run \`claude --model haiku --print ...\` commands
-3. Analyze the OUTPUT from those commands (not files on disk)
-
-The ONLY files you should interact with are:
-- ${tmpDir}/${timestamp}/variation-1.md through ${tmpDir}/${timestamp}/variation-${variations}.md (write these, then delete)
-- ./test-sandbox-settings.json (pass to --settings flag, don't read it)
-
-## The System Prompt to Evaluate
-
-"${systemPrompt}"
-
-## Your Process
-
-### Step 1: Design a Revealing Task
-
-Create a coding task that would clearly reveal whether every aspect of the system prompt is being followed.
-
-CRITICAL: The system prompt may have multiple aspects, so the task should reveal whether all aspects are being followed, implied or explicit.
-
-The task should:
-- Be specific enough to generate actual code
-- Be complex enough to expose differences in approach
-- Naturally surface violations of the system prompt
-
-Example: If system prompt is "follow TDD", task might be "implement a URL shortener service"
-Example: If system prompt is "avoid code smells", task might be "refactor this legacy function: [provide messy code]"
-
-Write the task to a ${tmpDir}/${timestamp}/task.md file.
-
-### Step 2: Generate ${variations} System Prompt Variations in ${tmpDir}/${timestamp}
-
-Create ${variations} different ways to express the system prompt as CLAUDE.md-style instructions.
-Each variation should use a DIFFERENT STRATEGY:
-
+const VARIATION_STRATEGIES = `
 1. **PERSONA** - Role-based identity framing. Make the AI embody a specific expert.
    Example: "You are a battle-hardened TDD practitioner who has seen too many production bugs from untested code. You physically cannot write implementation before a failing test exists."
 
@@ -68,31 +15,124 @@ Each variation should use a DIFFERENT STRATEGY:
 
 5. **CHECKLIST** - Gated process with verification steps before each action.
    Example: "Before ANY code: □ Written failing test? □ Seen RED? □ Writing MINIMUM to pass? □ After GREEN, what to refactor? If unchecked, STOP."
+`;
 
-### Step 3: Run the Experiment
+/**
+ * Step 1: Design prompt - generates task.md and variation-*.md files
+ */
+export function buildDesignPrompt(systemPrompt: string, variations: number): string {
+   const outputDir = `${tmpDir}/${timestamp}`;
 
-For each variation, run a Haiku session with the task in parallel in the background, then sleep for 60 seconds before checking on the results.
+   return `You are a SYSTEM PROMPT VARIATION DESIGNER.
 
-\`\`\`bash
-# Write variation to local file
-Use the Write tool to write the variation to a ${tmpDir}/${timestamp}/variation-1.md markdown file.
+Your job is to create a revealing task and ${variations} system prompt variations to test.
 
-# Run Haiku with this variation as system context
-claude --model haiku \\
-   --print "git init then complete this task in full: $(cat ${tmpDir}/${timestamp}/task.md) --- CRITICAL: Once complete, diff all of the changed files back to the user. NEVER SUMMARIZE!" \\
-   --permission-mode "bypassPermissions" \\
-   --append-system-prompt "$(cat ${tmpDir}/${timestamp}/variation-1.md)" \\
-   --setting-sources "" \\
-   --mcp-config "${JSON.stringify(mcpConfig)}" \\
-   --settings ./test-sandbox-settings.json \\   
+## 🚨 CRITICAL RESTRICTIONS 🚨
+
+You are running inside the claude-checker tool directory. DO NOT:
+- Read ANY .ts, .js, .json, or source files in this directory
+- Explore or analyze the tool's own codebase
+- Use Glob, Grep, or Read on any source files
+
+You ONLY need to write files to: ${outputDir}
+
+## The System Prompt to Evaluate
+
+"${systemPrompt}"
+
+## Your Tasks
+
+### Task 1: Design a Revealing Coding Task
+
+Create a coding task that would clearly reveal whether every aspect of the system prompt is being followed.
+
+CRITICAL: The system prompt may have multiple aspects, so the task should reveal whether all aspects are being followed, implied or explicit.
+
+The task should:
+- Be specific enough to generate actual code
+- Be complex enough to expose differences in approach
+- Naturally surface violations of the system prompt
+
+Example: If system prompt is "follow TDD", task might be "implement a URL shortener service"
+Example: If system prompt is "avoid code smells", task might be "refactor this legacy function: [provide messy code]"
+
+Write the task to: ${outputDir}/task.md
+
+### Task 2: Generate ${variations} System Prompt Variations
+
+Create ${variations} different ways to express the system prompt as CLAUDE.md-style instructions.
+Each variation should use a DIFFERENT STRATEGY:
+${VARIATION_STRATEGIES}
+
+Write each variation to a separate file:
+- ${outputDir}/variation-1.md
+- ${outputDir}/variation-2.md
+- ... through variation-${variations}.md
+
+## Output
+
+After writing all files, output a JSON summary:
+
+\`\`\`json
+{
+  "task": "Brief description of the task",
+  "variations": [
+    { "number": 1, "strategy": "PERSONA", "summary": "Brief description" },
+    { "number": 2, "strategy": "EXEMPLAR", "summary": "Brief description" },
+    ...
+  ]
+}
 \`\`\`
 
-Repeat for all ${variations} variations (variation-1.md through variation-${variations}.md).
-Capture each output for comparison.
+Begin now - write the task and all variation files.`;
+}
 
-CRITICAL: All variations must be run **IN PARALLEL in the BACKGROUND then sleep for 60 seconds before checking on the results**
+/**
+ * Step 3: Evaluation prompt - takes captured outputs and evaluates them
+ */
+export function buildEvaluationPrompt(
+   systemPrompt: string,
+   task: string,
+   variations: VariationInfo[],
+   results: VariationResult[]
+): string {
+   const variationSummaries = variations
+      .map((v, i) => `${i + 1}. **${v.strategy}**: ${v.summary}`)
+      .join("\n");
 
-### Step 4: Evaluate Results
+   const resultBlocks = results
+      .map((r, i) => `
+### Variation ${i + 1}: ${variations[i]?.strategy || "UNKNOWN"}
+
+<output>
+${r.output}
+</output>
+
+Exit code: ${r.exitCode}
+`)
+      .join("\n");
+
+   return `You are a SYSTEM PROMPT EFFECTIVENESS EVALUATOR.
+
+Your job is to evaluate which system prompt variation best achieved the objective.
+
+## Original System Prompt Being Tested
+
+"${systemPrompt}"
+
+## Task That Was Given
+
+${task}
+
+## Variations Tested
+
+${variationSummaries}
+
+## Results from Each Variation
+
+${resultBlocks}
+
+## Your Evaluation
 
 For each output, score on:
 
@@ -103,38 +143,19 @@ For each output, score on:
 | Code Quality | Overall quality of the output |
 | Consistency | Would this approach work for similar tasks? |
 
-### Step 5: Recommend
-
-Provide:
-1. **Winner**: Which variation produced the best results
-2. **Why**: What made it effective
-3. **Suggested Improvement**: How to make the winning variation even better
-4. **Final Recommendation**: The optimized system prompt text to use
-
 ## Output Format
 
-Present your findings as:
-
 \`\`\`
-## Task Generated
-[The task you created]
-
-## Variations Tested
-1. PERSONA: [summary]
-2. EXEMPLAR: [summary]
-3. CONSTRAINT: [summary]
-4. SOCRATIC: [summary]
-5. CHECKLIST: [summary]
-
 ## Results
 
-### Variation 1: PERSONA
-[Code output summary]
+### Variation 1: ${variations[0]?.strategy || "PERSONA"}
+[Code output analysis]
 Scores: Adherence=X, Integration=X, Quality=X, Consistency=X
 Total: X/12
 
-### Variation 2: EXEMPLAR
+### Variation 2: ${variations[1]?.strategy || "EXEMPLAR"}
 ...
+(continue for all variations)
 
 ## Recommendation
 
@@ -146,7 +167,7 @@ Total: X/12
 
 **Optimized Version**:
 \\\`\\\`\\\`markdown
-[The best system prompt text to use]
+[The best system prompt text to use - improved based on what worked]
 \\\`\\\`\\\`
 \`\`\`
 
@@ -156,11 +177,48 @@ Total: X/12
 - The objective is EFFECTIVENESS, not length or style preference
 - If multiple variations tie, prefer the simpler one
 - Provide actionable feedback the user can immediately apply
-- **NEVER read source files (.ts, .js, .json) from this directory**
-- Your evaluation is based ONLY on the stdout from \`claude --print\` commands
-- Don't clean up, just leave the variations files in place
+- Focus on what actually worked in the outputs, not theoretical advantages
 
-Begin when ready.`;
+Begin your evaluation.`;
+}
+
+/**
+ * Get the output directory path
+ */
+export function getOutputDir(): string {
+   return `${tmpDir}/${timestamp}`;
+}
+
+/**
+ * Build the claude command args for running a variation
+ */
+export function buildVariationArgs(
+   taskPath: string,
+   variationPath: string
+): string[] {
+   return [
+      "claude",
+      "--model", "haiku",
+      "--print",
+      `git init && complete this task in full: $(cat ${taskPath}) --- CRITICAL: Once complete, diff all of the changed files back to the user. NEVER SUMMARIZE!`,
+      "--permission-mode", "bypassPermissions",
+      "--append-system-prompt", `$(cat ${variationPath})`,
+      "--setting-sources", "",
+      "--mcp-config", JSON.stringify({ mcpServers: {} }),
+   ];
+}
+
+// Types
+export interface VariationInfo {
+   number: number;
+   strategy: string;
+   summary: string;
+}
+
+export interface VariationResult {
+   variationNumber: number;
+   output: string;
+   exitCode: number;
 }
 
 // Legacy exports for backwards compatibility

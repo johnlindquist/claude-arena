@@ -62,7 +62,7 @@ bun run check "never use 'any' type, always define explicit return types"
 
 ## How It Works
 
-The judge (Sonnet by default) orchestrates the entire experiment:
+The judge (Opus by default) orchestrates the entire experiment:
 
 ```
 Your System Prompt
