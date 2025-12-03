@@ -1,5 +1,8 @@
 # claude-arena
 
+[![npm version](https://img.shields.io/npm/v/claude-arena.svg)](https://www.npmjs.com/package/claude-arena)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 **Find the most effective way to write your CLAUDE.md system prompts.**
 
 Give claude-arena a system prompt, and it will test 5 different ways of expressing it—then tell you which one works best.
@@ -92,10 +95,14 @@ claude-arena --model sonnet "your prompt"
 claude-arena --variations 3 "your prompt"
 ```
 
-### From source (without global install)
+### Running from source
 
 ```bash
-bun run check "your prompt"
+# Run the tool directly
+bun run start "your prompt"
+
+# Or use the source file
+bun run src/index.ts "your prompt"
 ```
 
 ## Output
@@ -139,6 +146,22 @@ claude-arena "never use 'any' type, always define explicit return types"
 
 # From a file
 claude-arena ./goals/zen-principles.md
+```
+
+## Development
+
+```bash
+# Install dependencies
+bun install
+
+# Run tests
+bun test
+
+# Type check
+bun run typecheck
+
+# Lint and format
+bun run check
 ```
 
 ## Requirements
