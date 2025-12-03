@@ -867,6 +867,15 @@ Format your response as:
 		outputDir,
 	);
 
+	const evalSpinner = ora({
+		text: "Starting evaluation...",
+		color: "cyan",
+	}).start();
+
+	// Small delay then stop spinner before streaming begins
+	await new Promise((resolve) => setTimeout(resolve, 500));
+	evalSpinner.stopAndPersist({ symbol: "📊", text: "Evaluating results..." });
+
 	const evalResult = await runClaude({
 		model,
 		systemPrompt: evaluationPrompt,
