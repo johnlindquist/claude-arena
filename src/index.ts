@@ -758,30 +758,40 @@ Format your response as:
 
 	// Track latest status for each variation
 	const variationStatus: Map<number, string> = new Map();
-	const spinner = ora({
-		text: "Starting variations...",
-		color: "cyan",
-	}).start();
+	const totalVariations = variations + 1; // 0 through variations (inclusive)
 
-	const updateStatus = () => {
-		// Build status line with truncated status per variation
-		const statusLine = Array.from(variationStatus.entries())
-			.sort((a, b) => a[0] - b[0])
-			.map(([num, status]) => {
-				const icon = status.includes("done")
-					? pc.green("✓")
-					: status.includes("error")
-						? pc.red("✗")
-						: pc.cyan("◌");
-				return `${icon} ${pc.dim(`[${num}]`)} ${status.slice(0, 10)}`;
-			})
-			.join("  ");
+	// Print initial status lines for all variations
+	for (let i = 0; i <= variations; i++) {
+		const label = i === 0 ? "BASELINE" : variationInfo.find((v) => v.number === i)?.strategy || `VAR-${i}`;
+		console.log(`   ${pc.cyan("◌")} ${pc.dim(`[${i}]`)} ${pc.dim(label.padEnd(12))} ${pc.dim("starting...")}`);
+	}
 
-		// Truncate to terminal width to prevent wrapping
-		const maxWidth = (process.stdout.columns || 80) - 10;
-		const truncated = statusLine.slice(0, maxWidth);
+	// Move cursor up to the first variation line for updates
+	const moveCursorToLine = (lineIndex: number) => {
+		const linesToMoveUp = totalVariations - lineIndex;
+		process.stdout.write(`\x1b[${linesToMoveUp}A`); // Move up
+	};
 
-		spinner.text = truncated;
+	const moveCursorToEnd = () => {
+		process.stdout.write(`\x1b[${totalVariations}B`); // Move down to end
+	};
+
+	const updateStatusLine = (variationNum: number, status: string) => {
+		const label = variationNum === 0 ? "BASELINE" : variationInfo.find((v) => v.number === variationNum)?.strategy || `VAR-${variationNum}`;
+		const icon = status.includes("done")
+			? pc.green("✓")
+			: status.includes("error")
+				? pc.red("✗")
+				: pc.cyan("◌");
+
+		// Truncate status to fit
+		const maxStatusLen = Math.max(20, (process.stdout.columns || 80) - 30);
+		const truncatedStatus = status.length > maxStatusLen ? status.slice(0, maxStatusLen - 1) + "…" : status;
+
+		moveCursorToLine(variationNum);
+		process.stdout.write(`\x1b[2K`); // Clear line
+		process.stdout.write(`   ${icon} ${pc.dim(`[${variationNum}]`)} ${pc.dim(label.padEnd(12))} ${truncatedStatus}`);
+		moveCursorToEnd();
 	};
 
 	// Start from 0 (baseline) through variations count
@@ -817,20 +827,14 @@ Format your response as:
 				settingSources: runSettingSources,
 				onStatus: (status) => {
 					variationStatus.set(i, status);
-					updateStatus();
+					updateStatusLine(i, status);
 				},
 			}),
 		);
 	}
 
-	// Show initial status (stays on same line, updated in place)
-	updateStatus();
-
 	// Wait for all variations to complete (don't fail if some error out)
 	const settled = await Promise.allSettled(variationPromises);
-
-	// Stop spinner when complete
-	spinner.stop();
 
 	const results: VariationResult[] = [];
 	let successCount = 0;
