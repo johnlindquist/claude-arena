@@ -760,53 +760,6 @@ Format your response as:
 
 	const variationPromises: Promise<VariationResult>[] = [];
 
-	// Track latest status for each variation
-	const variationStatus: Map<number, string> = new Map();
-	const totalVariations = variations + 1; // 0 through variations (inclusive)
-
-	// Print initial status lines for all variations
-	for (let i = 0; i <= variations; i++) {
-		const label =
-			i === 0 ? "BASELINE" : variationInfo.find((v) => v.number === i)?.strategy || `VAR-${i}`;
-		console.log(
-			`   ${pc.cyan("◌")} ${pc.dim(`[${i}]`)} ${pc.dim(label.padEnd(12))} ${pc.dim("starting...")}`,
-		);
-	}
-
-	// Move cursor up to the first variation line for updates
-	const moveCursorToLine = (lineIndex: number) => {
-		const linesToMoveUp = totalVariations - lineIndex;
-		process.stdout.write(`\x1b[${linesToMoveUp}A`); // Move up
-	};
-
-	const moveCursorToEnd = () => {
-		process.stdout.write(`\x1b[${totalVariations}B`); // Move down to end
-	};
-
-	const updateStatusLine = (variationNum: number, status: string) => {
-		const label =
-			variationNum === 0
-				? "BASELINE"
-				: variationInfo.find((v) => v.number === variationNum)?.strategy || `VAR-${variationNum}`;
-		const icon = status.includes("done")
-			? pc.green("✓")
-			: status.includes("error")
-				? pc.red("✗")
-				: pc.cyan("◌");
-
-		// Truncate status to fit
-		const maxStatusLen = Math.max(20, (process.stdout.columns || 80) - 30);
-		const truncatedStatus =
-			status.length > maxStatusLen ? `${status.slice(0, maxStatusLen - 1)}…` : status;
-
-		moveCursorToLine(variationNum);
-		process.stdout.write("\x1b[2K"); // Clear line
-		process.stdout.write(
-			`   ${icon} ${pc.dim(`[${variationNum}]`)} ${pc.dim(label.padEnd(12))} ${truncatedStatus}`,
-		);
-		moveCursorToEnd();
-	};
-
 	// Start from 0 (baseline) through variations count
 	for (let i = 0; i <= variations; i++) {
 		const variationPath = join(outputDir, `variation-${i}.md`);
@@ -821,14 +774,17 @@ Format your response as:
 		const workDir = join(outputDir, `run-${i}`);
 		await mkdir(workDir, { recursive: true });
 
-		variationStatus.set(i, "starting...");
-
 		// Baseline (i=0) in user mode: use settingSources="user", no append (Claude CLI loads CLAUDE.md)
 		// Variations (i>0): use settingSources="" (isolated), append variation content
 		// Standard mode: all variations use settingSources="" with their content appended
 		const isBaseline = i === 0;
 		const runSettingSources = isBaseline && userMode ? "user" : "";
 		const runAppendContent = isBaseline && userMode ? "" : variationContent;
+		const label = isBaseline
+			? "BASELINE"
+			: variationInfo.find((v) => v.number === i)?.strategy || `VAR-${i}`;
+
+		console.log(`   ${pc.cyan("◌")} ${pc.dim(`[${i}]`)} ${label} ${pc.dim("starting...")}`);
 
 		variationPromises.push(
 			runVariation({
@@ -838,10 +794,6 @@ Format your response as:
 				workDir,
 				testModel,
 				settingSources: runSettingSources,
-				onStatus: (status) => {
-					variationStatus.set(i, status);
-					updateStatusLine(i, status);
-				},
 			}),
 		);
 	}
@@ -1011,7 +963,6 @@ interface RunVariationOptions {
 	workDir: string;
 	testModel: string;
 	settingSources: string;
-	onStatus?: (status: string) => void;
 }
 
 /**
@@ -1019,8 +970,7 @@ interface RunVariationOptions {
  * Uses stream-json format, captures stdout quietly to avoid interleaved parallel output
  */
 async function runVariation(options: RunVariationOptions): Promise<VariationResult> {
-	const { variationNumber, task, variationContent, workDir, testModel, settingSources, onStatus } =
-		options;
+	const { variationNumber, task, variationContent, workDir, testModel, settingSources } = options;
 
 	try {
 		const settings = {
@@ -1071,11 +1021,9 @@ async function runVariation(options: RunVariationOptions): Promise<VariationResu
 		// Ignore stderr for variations (too noisy)
 		new Response(proc.stderr).text();
 
-		// Parse stream-json quietly with status callback
-		const output = await parseStreamJsonWithStatus(proc.stdout, onStatus);
+		// Parse stream-json quietly (no status callback - just capture output)
+		const output = await parseStreamJsonWithStatus(proc.stdout);
 		const exitCode = await proc.exited;
-
-		onStatus?.("✓ done");
 
 		return {
 			variationNumber,
@@ -1083,7 +1031,6 @@ async function runVariation(options: RunVariationOptions): Promise<VariationResu
 			exitCode,
 		};
 	} catch (error) {
-		onStatus?.("✗ error");
 		return {
 			variationNumber,
 			output: `ERROR: Failed to spawn claude process\n${error}`,
