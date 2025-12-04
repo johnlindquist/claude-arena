@@ -267,10 +267,22 @@ async function parseStreamJsonWithStatus(
 						if (block.type === "tool_use" && block.id && !seenToolIds.has(block.id)) {
 							seenToolIds.add(block.id);
 							const toolName = block.name || "Tool";
-							const filePath =
-								block.input?.file_path || block.input?.path || block.input?.command || "";
-							const shortPath = filePath.split("/").pop()?.slice(0, 30) || "";
-							onStatus?.(shortPath ? `${toolName}:${shortPath}` : toolName);
+
+							// Handle MCP wrapper tools - extract inner tool name and args
+							if (toolName === "mcp__cm__call_tool" && block.input?.name) {
+								const innerName = block.input.name;
+								const args = block.input.args || {};
+								// Extract the most useful arg value for display
+								const argValue = args.query || args.prompt || args.topic || args.content || "";
+								const shortArg =
+									typeof argValue === "string" ? argValue.slice(0, 35).replace(/\n/g, " ") : "";
+								onStatus?.(shortArg ? `${innerName}: ${shortArg}…` : innerName);
+							} else {
+								const filePath =
+									block.input?.file_path || block.input?.path || block.input?.command || "";
+								const shortPath = filePath.split("/").pop()?.slice(0, 30) || "";
+								onStatus?.(shortPath ? `${toolName}:${shortPath}` : toolName);
+							}
 						}
 					}
 				}

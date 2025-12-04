@@ -35,6 +35,9 @@ export interface ContentBlock {
 		file_path?: string;
 		path?: string;
 		command?: string;
+		// MCP wrapper tool fields (e.g., mcp__cm__call_tool)
+		name?: string;
+		args?: Record<string, unknown>;
 	};
 }
 
