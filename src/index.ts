@@ -255,10 +255,10 @@ async function parseStreamJsonWithStatus(
 							if (!state.seenTextIds.has(textKey)) {
 								state.seenTextIds.add(textKey);
 								state.fullContent += block.text;
-								// Report first 20 chars of text as status
-								const preview = block.text.slice(0, 20).replace(/\n/g, " ").trim();
+								// Report first 40 chars of text as status
+								const preview = block.text.slice(0, 40).replace(/\n/g, " ").trim();
 								if (preview) {
-									onStatus?.(preview + (block.text.length > 20 ? "…" : ""));
+									onStatus?.(preview + (block.text.length > 40 ? "…" : ""));
 								}
 							}
 						}
@@ -269,7 +269,7 @@ async function parseStreamJsonWithStatus(
 							const toolName = block.name || "Tool";
 							const filePath =
 								block.input?.file_path || block.input?.path || block.input?.command || "";
-							const shortPath = filePath.split("/").pop()?.slice(0, 15) || "";
+							const shortPath = filePath.split("/").pop()?.slice(0, 30) || "";
 							onStatus?.(shortPath ? `${toolName}:${shortPath}` : toolName);
 						}
 					}
