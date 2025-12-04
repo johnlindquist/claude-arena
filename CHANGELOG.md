@@ -1,3 +1,10 @@
+## [1.5.1](https://github.com/johnlindquist/claude-arena/compare/v1.5.0...v1.5.1) (2025-12-04)
+
+
+### Bug Fixes
+
+* increase status preview length from 20 to 40 chars ([9e6b0a8](https://github.com/johnlindquist/claude-arena/commit/9e6b0a8e2adb07f1df6149eb6f8d423998166572))
+
 # [1.5.0](https://github.com/johnlindquist/claude-arena/compare/v1.4.0...v1.5.0) (2025-12-03)
 
 
